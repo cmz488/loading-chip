@@ -193,7 +193,7 @@ pub fn run_debug(
     // - 自动检测只找到回退 GDB（架构不匹配）→ 输出连接指引，不进 TUI
     // - 完全找不到任何 GDB → 输出连接指引
     let gdb_binary = match gdb_opt {
-        Some((path, true)) => (path, true),
+        Some((path, true)) => path,
         Some((_path, false)) => {
             // 只找到回退 GDB（如 arm-none-eabi-gdb 读 Xtensa ELF）
             eprintln!("✅ GDB Server 已就绪 (localhost:{})", port);
