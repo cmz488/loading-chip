@@ -1,0 +1,124 @@
+# loading-chip 板子配置
+# 每个板子定义名称、架构、后端适配参数和推荐接口
+# 用户可自行添加支持的板子
+
+boards:
+  # ──── STM32 系列 ────
+  stm32f1:
+    name: "STM32F103C8"
+    manufacturer: "STMicroelectronics"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "STM32F103C8" }
+      openocd: { target: "stm32f1x", config: "target/stm32f1x.cfg" }
+      pyocd: { target: "stm32f103c8" }
+      gdb: { target: "stm32f1" }
+
+  stm32f4:
+    name: "STM32F407VG"
+    manufacturer: "STMicroelectronics"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "STM32F407VG" }
+      openocd: { target: "stm32f4x", config: "target/stm32f4x.cfg" }
+      pyocd: { target: "stm32f407vg" }
+      gdb: { target: "stm32f4" }
+
+  stm32h7:
+    name: "STM32H743ZI"
+    manufacturer: "STMicroelectronics"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "STM32H743ZI" }
+      openocd: { target: "stm32h7x", config: "target/stm32h7x.cfg" }
+      pyocd: { target: "stm32h743zi" }
+      gdb: { target: "stm32h7" }
+
+  stm32g0:
+    name: "STM32G030F6"
+    manufacturer: "STMicroelectronics"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "STM32G030F6" }
+      openocd: { target: "stm32g0x", config: "target/stm32g0x.cfg" }
+      pyocd: { target: "stm32g030f6" }
+      gdb: { target: "stm32g0" }
+
+  # ──── ESP32 系列（XTensa / RISC-V） ────
+  # ⚠️ pyOCD 仅支持 ARM Cortex-M，不支持 ESP32！
+  esp32:
+    name: "ESP32"
+    manufacturer: "Espressif"
+    architecture: xtensa
+    interfaces: [usb-uart, jtag]
+    backends:
+      probe-rs: { target: "ESP32" }
+      openocd: { target: "esp32", config: "board/esp32-wrover-kit-3.3v.cfg" }
+      # gdb: Xtensa GDB（需 xtensa-esp32-elf-gdb）
+      # pyocd: 不支持 Xtensa 架构
+    note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+
+  esp32s3:
+    name: "ESP32-S3"
+    manufacturer: "Espressif"
+    architecture: xtensa
+    interfaces: [usb-jtag, jtag]
+    backends:
+      probe-rs: { target: "ESP32S3" }
+      openocd: { target: "esp32s3", config: "board/esp32s3-builtin.cfg" }
+    note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+
+  esp32c3:
+    name: "ESP32-C3"
+    manufacturer: "Espressif"
+    architecture: riscv
+    interfaces: [usb-jtag, jtag]
+    backends:
+      probe-rs: { target: "ESP32C3" }
+      openocd: { target: "esp32c3", config: "board/esp32c3-builtin.cfg" }
+    note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+
+  # ──── Raspberry Pi ────
+  rp2040:
+    name: "RP2040"
+    manufacturer: "Raspberry Pi"
+    architecture: arm
+    interfaces: [swd, picoprobe]
+    backends:
+      probe-rs: { target: "RP2040" }
+      openocd: { target: "rp2040", config: "target/rp2040.cfg" }
+      pyocd: { target: "rp2040" }
+
+  # ──── Nordic ────
+  nrf52:
+    name: "nRF52840"
+    manufacturer: "Nordic Semiconductor"
+    architecture: arm
+    interfaces: [swd, jlink]
+    backends:
+      probe-rs: { target: "nRF52840_xxAA" }
+      openocd: { target: "nrf52", config: "target/nrf52.cfg" }
+      pyocd: { target: "nrf52840" }
+
+  # ──── GD32 / AT32（国产兼容系列） ────
+  gd32:
+    name: "GD32F303ZE"
+    manufacturer: "GigaDevice"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "GD32F303ZE" }
+      openocd: { target: "stm32f1x", config: "target/stm32f1x.cfg" }
+
+  at32:
+    name: "AT32F403AVGT7"
+    manufacturer: "Artery"
+    architecture: arm
+    interfaces: [swd, stlink, jlink]
+    backends:
+      probe-rs: { target: "AT32F403AVGT7" }
+      openocd: { target: "stm32f4x", config: "target/stm32f4x.cfg" }
