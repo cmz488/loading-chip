@@ -99,4 +99,5 @@ pub enum Commands {
         #[arg(short = 'g', long, value_name = "GDB路径")]
         gdb: Option<String>,
     },
+    Detect {},
 }

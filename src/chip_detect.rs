@@ -2,6 +2,8 @@
 //!
 //! 检测接口始终可用；probe-rs 实现在 debug feature 控制下编译。
 
+use std::io;
+
 /// 检测到的芯片信息
 #[derive(Debug, Clone)]
 pub struct DetectedChip {
@@ -53,16 +55,14 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
 
             // 尝试自动检测芯片（可能失败：克隆探头 / 未知芯片 / 权限不足）
             let chip_name = match probe.open() {
-                Ok(attached) => {
-                    match attached.attach((), probe_rs::Permissions::default()) {
-                        Ok(session) => {
-                            let name = session.target().name.clone();
-                            drop(session);
-                            name
-                        }
-                        Err(_) => String::new(),
+                Ok(attached) => match attached.attach((), probe_rs::Permissions::default()) {
+                    Ok(session) => {
+                        let name = session.target().name.clone();
+                        drop(session);
+                        name
                     }
-                }
+                    Err(_) => String::new(),
+                },
                 Err(_) => String::new(),
             };
 
@@ -75,4 +75,44 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
             }
         })
         .collect()
+}
+/// 运行detect终端命令
+pub fn run_detect() -> io::Result<()> {
+    let boards = detect_chips();
+    if boards.is_empty() {
+        eprintln!("no board find");
+        return Ok(());
+    }
+    let num = boards.len();
+    eprintln!("已检测到 {} 块板子", num);
+    // 计算各列最大宽度用于对齐
+    let max_chip = boards.iter().map(|b| b.chip_name.len()).max().unwrap_or(0);
+    let max_board = boards
+        .iter()
+        .map(|b| b.board_id.as_deref().unwrap_or("").len())
+        .max()
+        .unwrap_or(0);
+    let max_iface = boards
+        .iter()
+        .map(|b| b.suggested_interface.len())
+        .max()
+        .unwrap_or(0);
+    let max_probe = boards.iter().map(|b| b.probe_name.len()).max().unwrap_or(0);
+
+    for board in boards {
+        let chip = board.chip_name;
+        let board_id = board.board_id.as_deref().unwrap_or("");
+        println!(
+            "[chip: \"{:>max_chip$}\"；board: \"{:>max_board$}\"；interface: \"{:>max_iface$}\"；probe_name: \"{:>max_probe$}\"]",
+            chip,
+            board_id,
+            board.suggested_interface,
+            board.probe_name,
+            max_chip = max_chip,
+            max_board = max_board,
+            max_iface = max_iface,
+            max_probe = max_probe,
+        );
+    }
+    Ok(())
 }

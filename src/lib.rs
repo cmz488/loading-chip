@@ -43,17 +43,17 @@ use std::io;
 use std::sync::Arc;
 
 use app::state::AppState;
+use chip_detect::run_detect;
 use clap::Parser;
-use flash::{do_flash, FlashBackend, FlashConfig};
+use flash::{FlashBackend, FlashConfig, do_flash};
 
 /// 程序入口 — 解析 CLI 参数并分发到对应模式
 pub fn run() -> io::Result<()> {
     let cli = cli::Cli::parse();
 
     // 加载板子配置（全局单例，TUI/API/Headless 共享）
-    let registry = board::BoardRegistry::load()
-        .map_err(io::Error::other)?;
-    eprintln!("📋 已加载 {} 块板子配置", registry.len());
+    let registry = board::BoardRegistry::load().map_err(io::Error::other)?;
+    //eprintln!("📋 已加载 {} 块板子配置", registry.len());
     let state = Arc::new(AppState::new(registry));
 
     match cli.command {
@@ -69,7 +69,10 @@ pub fn run() -> io::Result<()> {
             timeout,
             api,
             api_addr,
-        }) => run_flash(state, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api, api_addr)?,
+        }) => run_flash(
+            state, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api,
+            api_addr,
+        )?,
         Some(cli::Commands::Debug {
             elf,
             target,
@@ -77,10 +80,19 @@ pub fn run() -> io::Result<()> {
             interface,
             port,
             gdb,
-        }) => run_debug(state, elf, target, backend, interface.unwrap_or_default(), port, gdb.unwrap_or_default())?,
+        }) => run_debug(
+            state,
+            elf,
+            target,
+            backend,
+            interface.unwrap_or_default(),
+            port,
+            gdb.unwrap_or_default(),
+        )?,
         Some(cli::Commands::Init { force, output }) => {
             setup::run_init(force, output.as_deref())?;
         }
+        Some(cli::Commands::Detect {}) => run_detect()?,
     }
 
     Ok(())
@@ -117,7 +129,12 @@ fn run_tui_loop(
                 saved_app = new_app;
             }
             tui::TuiExit::DebugRequested {
-                elf, target, backend, interface, port, gdb,
+                elf,
+                target,
+                backend,
+                interface,
+                port,
+                gdb,
             } => {
                 saved_app = new_app;
                 match tui::run_debug(elf, target, backend, interface, port, gdb)? {
@@ -168,7 +185,9 @@ fn run_flash(
             eprintln!("🟢 API 运行中（按 Ctrl+C 退出）...");
             std::thread::park();
         } else {
-            return run_headless(&state, backend, interface, target, elf, gdb_port, pyocd_path, timeout);
+            return run_headless(
+                &state, backend, interface, target, elf, gdb_port, pyocd_path, timeout,
+            );
         }
         return Ok(());
     }
@@ -197,13 +216,23 @@ fn run_headless(
         (Some(i), Some(t), Some(e)) => {
             let be = FlashBackend::from_str(&backend);
             let config = match FlashConfig::from_registry(
-                be, &state.registry, &t, &i, &e, &gdb_port, &pyocd_path, timeout,
+                be,
+                &state.registry,
+                &t,
+                &i,
+                &e,
+                &gdb_port,
+                &pyocd_path,
+                timeout,
             ) {
                 Ok(cfg) => cfg,
                 Err(err) => {
                     let result = flash::FlashResult {
-                        success: false, message: err,
-                        command: String::new(), stdout: None, stderr: None,
+                        success: false,
+                        message: err,
+                        command: String::new(),
+                        stdout: None,
+                        stderr: None,
                     };
                     println!("{}", serde_json::to_string_pretty(&result).unwrap());
                     std::process::exit(1);
@@ -214,11 +243,17 @@ fn run_headless(
             std::process::exit(if result.success { 0 } else { 1 });
         }
         _ => {
-            println!("{}", serde_json::to_string_pretty(&flash::FlashResult {
-                success: false,
-                message: "无头模式需要提供 -i, -t, -e 全部参数".to_string(),
-                command: String::new(), stdout: None, stderr: None,
-            }).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&flash::FlashResult {
+                    success: false,
+                    message: "无头模式需要提供 -i, -t, -e 全部参数".to_string(),
+                    command: String::new(),
+                    stdout: None,
+                    stderr: None,
+                })
+                .unwrap()
+            );
             std::process::exit(1);
         }
     }
@@ -237,18 +272,32 @@ fn run_cli_mode(
 ) -> io::Result<()> {
     let be = FlashBackend::from_str(&backend);
     let config = match FlashConfig::from_registry(
-        be, &state.registry, target, interface, elf, &gdb_port, &pyocd_path, timeout,
+        be,
+        &state.registry,
+        target,
+        interface,
+        elf,
+        &gdb_port,
+        &pyocd_path,
+        timeout,
     ) {
         Ok(cfg) => cfg,
-        Err(err) => { eprintln!("{}", err); std::process::exit(1); }
+        Err(err) => {
+            eprintln!("{}", err);
+            std::process::exit(1);
+        }
     };
     let result = do_flash(&config);
     println!("{}", result.message);
     if let Some(ref stdout) = result.stdout {
-        if !stdout.trim().is_empty() { println!("\n--- 输出 ---\n{}", stdout); }
+        if !stdout.trim().is_empty() {
+            println!("\n--- 输出 ---\n{}", stdout);
+        }
     }
     if let Some(ref stderr) = result.stderr {
-        if !stderr.trim().is_empty() { eprintln!("\n--- 错误 ---\n{}", stderr); }
+        if !stderr.trim().is_empty() {
+            eprintln!("\n--- 错误 ---\n{}", stderr);
+        }
     }
     std::process::exit(if result.success { 0 } else { 1 });
 }
