@@ -5,7 +5,7 @@
 use ratatui::widgets::ListState;
 use std::sync::Arc;
 
-use crate::board::BoardRegistry;
+use crate::app::state::AppState;
 use crate::chip_detect::DetectedChip;
 use crate::flash::{do_flash, FlashBackend, FlashConfig, FlashResult};
 use crate::presets;
@@ -77,8 +77,8 @@ pub struct App {
     // --- 退出标志 ---
     pub should_quit: bool,
 
-    /// 板子注册表（只读共享）
-    pub registry: Arc<BoardRegistry>,
+    /// 共享应用状态（TUI/API/Headless 共用）
+    pub state: Arc<AppState>,
     /// 自动检测到的芯片列表
     pub detected_chips: Vec<DetectedChip>,
 }
@@ -89,7 +89,7 @@ impl App {
         gdb_port: String,
         pyocd_path: String,
         timeout_secs: u64,
-        registry: Arc<BoardRegistry>,
+        state: Arc<AppState>,
     ) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
@@ -119,7 +119,7 @@ impl App {
             debug_gdb: String::new(),
             switch_to_debug: false,
             should_quit: false,
-            registry,
+            state,
             detected_chips: Vec::new(),
         }
     }
@@ -222,7 +222,7 @@ impl App {
                 if let Some(k) = keys.get(self.target_idx) {
                     self.target = k.clone();
                     // 根据所选芯片自动匹配推荐接口
-                    if let Some(info) = self.registry.get(&self.target) {
+                    if let Some(info) = self.state.registry.get(&self.target) {
                         if let Some(recommended_iface) = info.interfaces.first() {
                             let iface_keys = presets::iface_keys();
                             if let Some(idx) = iface_keys.iter().position(|i| i == recommended_iface) {
@@ -313,7 +313,7 @@ impl App {
         let elf = if self.elf_path.is_empty() { "firmware.elf" } else { &self.elf_path };
 
         let config = match FlashConfig::from_registry(
-            be, &self.registry, &self.target, &self.interface, elf,
+            be, &self.state.registry, &self.target, &self.interface, elf,
             &self.gdb_port, &self.pyocd_path, self.timeout_secs,
         ) {
             Ok(cfg) => cfg,

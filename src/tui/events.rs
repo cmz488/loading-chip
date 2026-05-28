@@ -29,7 +29,7 @@ pub fn handle_key(app: &mut App, code: KeyCode) -> bool {
         if let Some(detected) = app.detected_chips.first() {
             let board_id = detected.board_id.clone()
                 .unwrap_or_else(|| detected.chip_name.clone());
-            if app.registry.resolve(&board_id, "probe-rs").is_ok() {
+            if app.state.registry.resolve(&board_id, "probe-rs").is_ok() {
                 app.target = board_id;
             } else {
                 app.target = detected.chip_name.clone();

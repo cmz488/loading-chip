@@ -18,8 +18,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::board::BoardRegistry;
-use crate::chip_detect::DetectedChip;
+use crate::app::state::AppState;
 use self::app::App;
 use self::events::handle_key;
 use self::ui::ui;
@@ -51,8 +50,7 @@ pub fn run_with_resume(
     pyocd_path: String,
     timeout_secs: u64,
     resume_app: Option<App>,
-    detected_chips: Vec<DetectedChip>,
-    registry: Arc<BoardRegistry>,
+    state: Arc<AppState>,
 ) -> io::Result<(TuiExit, Option<App>)> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -62,15 +60,15 @@ pub fn run_with_resume(
     let mut terminal = ratatui::Terminal::new(backend_t)?;
 
     let mut app = resume_app.unwrap_or_else(move || {
-        let mut app = App::new(gdb_port, pyocd_path, timeout_secs, registry);
+        let mut app = App::new(gdb_port, pyocd_path, timeout_secs, state);
         // Auto-fill from detection
-        if let Some(detected) = detected_chips.first() {
+        if let Some(detected) = app.detected_chips.first() {
             let board_id = detected
                 .board_id
                 .clone()
                 .unwrap_or_else(|| detected.chip_name.clone());
             // Try to resolve; if it fails, use the raw chip name
-            if app.registry.resolve(&board_id, "probe-rs").is_ok() {
+            if app.state.registry.resolve(&board_id, "probe-rs").is_ok() {
                 app.target = board_id;
             } else {
                 app.target = detected.chip_name.clone();
@@ -88,7 +86,7 @@ pub fn run_with_resume(
                 "已检测到: {} (芯片: {})",
                 detected.probe_name, detected.chip_name
             );
-            app.detected_chips = detected_chips;
+            // detection results cached in AppState
         }
         app
     });

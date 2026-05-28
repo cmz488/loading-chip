@@ -42,6 +42,7 @@ mod tui;
 use std::io;
 use std::sync::Arc;
 
+use app::state::AppState;
 use clap::Parser;
 use flash::{do_flash, FlashBackend, FlashConfig};
 
@@ -49,13 +50,14 @@ use flash::{do_flash, FlashBackend, FlashConfig};
 pub fn run() -> io::Result<()> {
     let cli = cli::Cli::parse();
 
-    // 加载板子配置
+    // 加载板子配置（全局单例，TUI/API/Headless 共享）
     let registry = board::BoardRegistry::load()
         .map_err(io::Error::other)?;
     eprintln!("📋 已加载 {} 块板子配置", registry.len());
+    let state = Arc::new(AppState::new(registry));
 
     match cli.command {
-        None => run_tui_default(Arc::new(registry))?,
+        None => run_tui_default(state)?,
         Some(cli::Commands::Run {
             backend,
             interface,
@@ -67,7 +69,7 @@ pub fn run() -> io::Result<()> {
             timeout,
             api,
             api_addr,
-        }) => run_flash(Arc::new(registry), backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api, api_addr)?,
+        }) => run_flash(state, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api, api_addr)?,
         Some(cli::Commands::Debug {
             elf,
             target,
@@ -75,7 +77,7 @@ pub fn run() -> io::Result<()> {
             interface,
             port,
             gdb,
-        }) => run_debug(elf, target, backend, interface.unwrap_or_default(), port, gdb.unwrap_or_default())?,
+        }) => run_debug(state, elf, target, backend, interface.unwrap_or_default(), port, gdb.unwrap_or_default())?,
         Some(cli::Commands::Init { force, output }) => {
             setup::run_init(force, output.as_deref())?;
         }
@@ -89,13 +91,11 @@ pub fn run() -> io::Result<()> {
 // ============================================================================
 
 /// 循环运行 TUI（烧录 ↔ 调试互相切换，直到用户退出）
-/// 保留用户选择的状态，从调试返回后不丢失之前的设置
 fn run_tui_loop(
     gdb_port: String,
     pyocd_path: String,
     timeout_secs: u64,
-    detected_chips: Vec<chip_detect::DetectedChip>,
-    registry: Arc<board::BoardRegistry>,
+    state: Arc<AppState>,
 ) -> io::Result<()> {
     let current_gdb_port = gdb_port;
     let current_pyocd = pyocd_path;
@@ -108,33 +108,21 @@ fn run_tui_loop(
             current_pyocd.clone(),
             current_timeout,
             saved_app.take(),
-            detected_chips.clone(),
-            registry.clone(),
+            state.clone(),
         )?;
 
         match exit {
             tui::TuiExit::Quit => break,
             tui::TuiExit::Flashed => {
-                // 烧录完成 → 保留状态继续
                 saved_app = new_app;
             }
             tui::TuiExit::DebugRequested {
-                elf,
-                target,
-                backend,
-                interface,
-                port,
-                gdb,
+                elf, target, backend, interface, port, gdb,
             } => {
-                // 进调试前保存当前 TUI 状态
                 saved_app = new_app;
-
-                // 切换到调试 TUI
                 match tui::run_debug(elf, target, backend, interface, port, gdb)? {
                     tui::TuiExit::Quit => break,
-                    tui::TuiExit::Flashed | tui::TuiExit::DebugRequested { .. } => {
-                        // 回到烧录模式，saved_app 里保留了之前的设置
-                    }
+                    tui::TuiExit::Flashed | tui::TuiExit::DebugRequested { .. } => {}
                 }
             }
         }
@@ -142,7 +130,7 @@ fn run_tui_loop(
     Ok(())
 }
 
-fn run_tui_default(registry: Arc<board::BoardRegistry>) -> io::Result<()> {
+fn run_tui_default(state: Arc<AppState>) -> io::Result<()> {
     let detected = chip_detect::detect_chips();
     if !detected.is_empty() {
         eprintln!("检测到 {} 个设备:", detected.len());
@@ -150,12 +138,12 @@ fn run_tui_default(registry: Arc<board::BoardRegistry>) -> io::Result<()> {
             eprintln!("  - {} (芯片: {})", d.probe_name, d.chip_name);
         }
     }
-    run_tui_loop("3333".to_string(), String::new(), 60, detected, registry)
+    run_tui_loop("3333".to_string(), String::new(), 60, state)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn run_flash(
-    registry: Arc<board::BoardRegistry>,
+    state: Arc<AppState>,
     backend: String,
     interface: Option<String>,
     target: Option<String>,
@@ -167,12 +155,9 @@ fn run_flash(
     api: bool,
     api_addr: String,
 ) -> io::Result<()> {
-    let be = FlashBackend::from_str(&backend);
-
-    // 启动 API 服务（axum）
+    // 启动 API 服务（与 TUI/Headless 共享同一个 AppState）
     let _api_shutdown = if api {
-        let state = app::state::AppState::new((*registry).clone());
-        let shutdown = api::spawn_server(state, api_addr.clone());
+        let shutdown = api::spawn_server((*state).clone(), api_addr.clone());
         Some(shutdown)
     } else {
         None
@@ -180,29 +165,27 @@ fn run_flash(
 
     if headless {
         if _api_shutdown.is_some() {
-            // 无头模式 + API：阻塞主线程，等待 Ctrl+C
             eprintln!("🟢 API 运行中（按 Ctrl+C 退出）...");
             std::thread::park();
         } else {
-            return run_headless(&*registry, be, interface, target, elf, gdb_port, pyocd_path, timeout);
+            return run_headless(&state, backend, interface, target, elf, gdb_port, pyocd_path, timeout);
         }
         return Ok(());
     }
 
     // 命令行模式：全参数 → 跳过 TUI
     if let (Some(i), Some(t), Some(e)) = (&interface, &target, &elf) {
-        return run_cli_mode(&*registry, be, i, t, e, gdb_port, pyocd_path, timeout);
+        return run_cli_mode(&state, backend, i, t, e, gdb_port, pyocd_path, timeout);
     }
 
-    // TUI 模式（支持烧录 ↔ 调试切换）
-    let detected = chip_detect::detect_chips();
-    run_tui_loop(gdb_port, pyocd_path, timeout, detected, registry)
+    // TUI 模式
+    run_tui_loop(gdb_port, pyocd_path, timeout, state)
 }
 
 #[allow(clippy::too_many_arguments)]
 fn run_headless(
-    registry: &board::BoardRegistry,
-    be: FlashBackend,
+    state: &AppState,
+    backend: String,
     interface: Option<String>,
     target: Option<String>,
     elf: Option<String>,
@@ -212,17 +195,15 @@ fn run_headless(
 ) -> io::Result<()> {
     match (interface, target, elf) {
         (Some(i), Some(t), Some(e)) => {
+            let be = FlashBackend::from_str(&backend);
             let config = match FlashConfig::from_registry(
-                be, registry, &t, &i, &e, &gdb_port, &pyocd_path, timeout,
+                be, &state.registry, &t, &i, &e, &gdb_port, &pyocd_path, timeout,
             ) {
                 Ok(cfg) => cfg,
                 Err(err) => {
                     let result = flash::FlashResult {
-                        success: false,
-                        message: err,
-                        command: String::new(),
-                        stdout: None,
-                        stderr: None,
+                        success: false, message: err,
+                        command: String::new(), stdout: None, stderr: None,
                     };
                     println!("{}", serde_json::to_string_pretty(&result).unwrap());
                     std::process::exit(1);
@@ -233,14 +214,11 @@ fn run_headless(
             std::process::exit(if result.success { 0 } else { 1 });
         }
         _ => {
-            let err = flash::FlashResult {
+            println!("{}", serde_json::to_string_pretty(&flash::FlashResult {
                 success: false,
                 message: "无头模式需要提供 -i, -t, -e 全部参数".to_string(),
-                command: String::new(),
-                stdout: None,
-                stderr: None,
-            };
-            println!("{}", serde_json::to_string_pretty(&err).unwrap());
+                command: String::new(), stdout: None, stderr: None,
+            }).unwrap());
             std::process::exit(1);
         }
     }
@@ -248,8 +226,8 @@ fn run_headless(
 
 #[allow(clippy::too_many_arguments)]
 fn run_cli_mode(
-    registry: &board::BoardRegistry,
-    be: FlashBackend,
+    state: &AppState,
+    backend: String,
     interface: &str,
     target: &str,
     elf: &str,
@@ -257,26 +235,20 @@ fn run_cli_mode(
     pyocd_path: String,
     timeout: u64,
 ) -> io::Result<()> {
+    let be = FlashBackend::from_str(&backend);
     let config = match FlashConfig::from_registry(
-        be, registry, target, interface, elf, &gdb_port, &pyocd_path, timeout,
+        be, &state.registry, target, interface, elf, &gdb_port, &pyocd_path, timeout,
     ) {
         Ok(cfg) => cfg,
-        Err(err) => {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        }
+        Err(err) => { eprintln!("{}", err); std::process::exit(1); }
     };
     let result = do_flash(&config);
     println!("{}", result.message);
     if let Some(ref stdout) = result.stdout {
-        if !stdout.trim().is_empty() {
-            println!("\n--- 输出 ---\n{}", stdout);
-        }
+        if !stdout.trim().is_empty() { println!("\n--- 输出 ---\n{}", stdout); }
     }
     if let Some(ref stderr) = result.stderr {
-        if !stderr.trim().is_empty() {
-            eprintln!("\n--- 错误 ---\n{}", stderr);
-        }
+        if !stderr.trim().is_empty() { eprintln!("\n--- 错误 ---\n{}", stderr); }
     }
     std::process::exit(if result.success { 0 } else { 1 });
 }
@@ -286,6 +258,7 @@ fn run_cli_mode(
 // ============================================================================
 
 fn run_debug(
+    _state: Arc<AppState>,
     elf: String,
     target: String,
     backend: String,
@@ -295,9 +268,7 @@ fn run_debug(
 ) -> io::Result<()> {
     match tui::run_debug(elf, target, backend, interface, port, gdb)? {
         tui::TuiExit::Quit => {}
-        tui::TuiExit::Flashed | tui::TuiExit::DebugRequested { .. } => {
-            // 从调试模式返回，继续到 run_tui_loop
-        }
+        tui::TuiExit::Flashed | tui::TuiExit::DebugRequested { .. } => {}
     }
     Ok(())
 }
