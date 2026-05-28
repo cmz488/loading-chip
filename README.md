@@ -130,6 +130,10 @@ Headless 模式:
 ```
 
 ## 用户接口
+### 使用probe-rs检测板子是否连接
+```bash
+loading-chip detect
+```
 
 ### TUI 交互模式
 
