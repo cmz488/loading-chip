@@ -34,7 +34,6 @@ pub fn openocd_target_cfg(target: &str) -> &'static str {
         "nrf52" => "target/nrf52840.cfg",
         "gd32" => "target/stm32f1x.cfg",
         "at32" => "target/stm32f4x.cfg",
-        "mspm0g3507" => "target/ti_mspm0.cfg",
         _ => "target/stm32f1x.cfg",
     }
 }

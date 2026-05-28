@@ -158,7 +158,8 @@ boards:
                         "AT32F403AVCT7"]
 
   # ──── TI MSPM0 系列 ────
-  # probe-rs 0.31+ 支持 MSPM0G3507；pyOCD 不支持 MSPM0（无 CMSIS-Pack）
+  # probe-rs 0.31+ 原生支持 MSPM0G3507（推荐）
+  # OpenOCD ≥0.13 才支持 MSPM0（此版本尚未发布）；pyOCD 不支持
   mspm0g3507:
     name: "MSPM0G3507"
     manufacturer: "Texas Instruments"
@@ -166,9 +167,8 @@ boards:
     interfaces: [swd, jlink, xds110]
     backends:
       probe-rs: { target: "MSPM0G3507" }
-      openocd: { target: "ti_mspm0", config: "target/ti_mspm0.cfg" }
       gdb: { target: "mspm0g3507" }
-    note: "pyOCD 不支持 MSPM0；推荐使用 probe-rs 或 OpenOCD"
+    note: "推荐使用 probe-rs；OpenOCD 需 ≥0.13 才支持 MSPM0；pyOCD 不支持"
     detection:
       probe_rs_chips: ["MSPM0G3507", "MSPM0G3506", "MSPM0G3505",
                         "MSPM0G3107", "MSPM0G3106", "MSPM0G3105",
