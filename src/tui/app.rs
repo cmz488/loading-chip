@@ -230,14 +230,6 @@ impl App {
                                 self.iface_idx = idx;
                             }
                         }
-                        // 自动选择可用后端（优先 probe-rs）
-                        if info.supported_backends.contains(&"probe-rs".to_string()) {
-                            let be_keys = presets::backend_keys();
-                            if let Some(idx) = be_keys.iter().position(|b| b == "probe-rs") {
-                                self.backend = "probe-rs".to_string();
-                                self.backend_idx = idx;
-                            }
-                        }
                     }
                 }
             }
