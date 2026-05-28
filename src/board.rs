@@ -6,7 +6,7 @@
 //! - 可扩展：用户自行在 YAML 中添加板子
 //!
 //! 架构：
-//! ```
+//! ```text
 //! boards.yaml → BoardRegistry::load() → BoardConfig
 //!                                          ├── BackendTarget（per-backend 参数）
 //!                                          └── BoardInfo（名称/架构/接口）
