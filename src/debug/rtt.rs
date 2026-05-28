@@ -184,55 +184,48 @@ impl Drop for ProbeRsRtt {
 }
 
 // ============================================================================
-// OpenOCD RTT 客户端（telnet）
+// Telnet RTT 客户端（OpenOCD / pyOCD 共用）
 // ============================================================================
 
-/// OpenOCD RTT 客户端 — 通过 telnet 连接 OpenOCD 并发送 RTT 命令
-pub struct OpenOcdRtt {
+/// Telnet-based RTT client.
+///
+/// `startup_fn` is called once after connecting to issue backend-specific
+/// RTT setup/tracking commands.
+pub struct TelnetRtt {
     stream: Option<TcpStream>,
     thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
 }
 
-impl OpenOcdRtt {
-    pub fn spawn(config: &RttConfig, sender: Sender<RttOutput>) -> std::io::Result<Self> {
-        let addr = format!("127.0.0.1:{}", config.telnet_port);
+impl TelnetRtt {
+    pub fn spawn(
+        telnet_addr: &str,
+        startup_fn: impl FnOnce(&mut TcpStream) -> std::io::Result<()> + Send + 'static,
+        sender: Sender<RttOutput>,
+    ) -> std::io::Result<Self> {
         let mut stream = TcpStream::connect_timeout(
-            &addr.parse().map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
-            })?,
-            Duration::from_secs(5),
+            &telnet_addr.parse().map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?,
+            Duration::from_secs(10),
         )?;
-
         stream.set_read_timeout(Some(Duration::from_secs(1)))?;
-
-        // 发送 RTT 初始化命令
-        writeln!(stream, "rtt setup")?;
-        writeln!(stream, "rtt start")?;
-        writeln!(stream, "rtt server start 9090 0")?;
+        startup_fn(&mut stream)?;
 
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = Arc::clone(&running);
-
-        // 使用 BufReader 需要可变引用，这里用 clone
         let mut reader_stream = stream.try_clone()?;
+
         let handle = thread::spawn(move || {
             let mut reader = BufReader::new(&mut reader_stream);
             let mut line = String::new();
             loop {
-                if !running_clone.load(Ordering::SeqCst) {
-                    break;
-                }
+                if !running_clone.load(Ordering::SeqCst) { break; }
                 line.clear();
                 match reader.read_line(&mut line) {
                     Ok(0) => break,
                     Ok(_) => {
-                        let text = line.trim().to_string();
-                        if !text.is_empty() {
-                            let _ = sender.send(RttOutput {
-                                channel: 0,
-                                text,
-                            });
+                        let trimmed = line.trim().to_string();
+                        if !trimmed.is_empty() {
+                            let _ = sender.send(RttOutput { channel: 0, text: trimmed });
                         }
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -244,34 +237,49 @@ impl OpenOcdRtt {
             }
         });
 
-        Ok(Self {
-            stream: Some(stream),
-            thread: Some(handle),
-            running,
-        })
+        Ok(Self { stream: Some(stream), thread: Some(handle), running })
     }
 }
 
-impl RttClient for OpenOcdRtt {
-    fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
-    }
-
+impl RttClient for TelnetRtt {
+    fn is_running(&self) -> bool { self.running.load(Ordering::SeqCst) }
     fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
-        if let Some(ref mut stream) = self.stream {
-            let _ = writeln!(stream, "rtt stop");
-        }
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
+        if let Some(thread) = self.thread.take() { let _ = thread.join(); }
+        if let Some(stream) = self.stream.take() { let _ = stream.shutdown(std::net::Shutdown::Both); }
     }
 }
 
-impl Drop for OpenOcdRtt {
-    fn drop(&mut self) {
-        self.stop();
-    }
+impl Drop for TelnetRtt {
+    fn drop(&mut self) { self.stop(); }
+}
+
+// ============================================================================
+// OpenOCD RTT（telnet）
+// ============================================================================
+
+/// 启动 OpenOCD telnet-based RTT
+pub fn spawn_openocd_rtt(telnet_port: u16, sender: Sender<RttOutput>) -> std::io::Result<TelnetRtt> {
+    let addr = format!("127.0.0.1:{}", telnet_port);
+    TelnetRtt::spawn(&addr, |stream| {
+        writeln!(stream, "rtt setup")?;
+        writeln!(stream, "rtt start")?;
+        writeln!(stream, "rtt server start 9090 0")?;
+        Ok(())
+    }, sender)
+}
+
+// ============================================================================
+// pyOCD RTT（telnet）
+// ============================================================================
+
+/// 启动 pyOCD telnet-based RTT
+pub fn spawn_pyocd_rtt(telnet_port: u16, sender: Sender<RttOutput>) -> std::io::Result<TelnetRtt> {
+    let addr = format!("127.0.0.1:{}", telnet_port);
+    TelnetRtt::spawn(&addr, |stream| {
+        writeln!(stream, "rtt")?;
+        Ok(())
+    }, sender)
 }
 
 // ============================================================================
