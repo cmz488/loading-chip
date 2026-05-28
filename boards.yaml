@@ -14,6 +14,8 @@ boards:
       openocd: { target: "stm32f1x", config: "target/stm32f1x.cfg" }
       pyocd: { target: "stm32f103c8" }
       gdb: { target: "stm32f1" }
+    detection:
+      probe_rs_chips: ["STM32F103C8", "STM32F103CB", "STM32F103RB", "STM32F103VB"]
 
   stm32f4:
     name: "STM32F407VG"
@@ -25,6 +27,10 @@ boards:
       openocd: { target: "stm32f4x", config: "target/stm32f4x.cfg" }
       pyocd: { target: "stm32f407vg" }
       gdb: { target: "stm32f4" }
+    detection:
+      probe_rs_chips: ["STM32F407VG", "STM32F407VE", "STM32F407ZE", "STM32F407IG",
+                        "STM32F429ZI", "STM32F429VI", "STM32F429NI",
+                        "STM32F405RG", "STM32F405VG"]
 
   stm32h7:
     name: "STM32H743ZI"
@@ -36,6 +42,9 @@ boards:
       openocd: { target: "stm32h7x", config: "target/stm32h7x.cfg" }
       pyocd: { target: "stm32h743zi" }
       gdb: { target: "stm32h7" }
+    detection:
+      probe_rs_chips: ["STM32H743ZI", "STM32H743VI", "STM32H750IB", "STM32H753ZI",
+                        "STM32H742ZI", "STM32H742VI"]
 
   stm32g0:
     name: "STM32G030F6"
@@ -47,6 +56,8 @@ boards:
       openocd: { target: "stm32g0x", config: "target/stm32g0x.cfg" }
       pyocd: { target: "stm32g030f6" }
       gdb: { target: "stm32g0" }
+    detection:
+      probe_rs_chips: ["STM32G030F6", "STM32G031F6", "STM32G030K6", "STM32G070RB"]
 
   # ──── ESP32 系列（XTensa / RISC-V） ────
   # ⚠️ pyOCD 仅支持 ARM Cortex-M，不支持 ESP32！
@@ -61,6 +72,8 @@ boards:
       # gdb: Xtensa GDB（需 xtensa-esp32-elf-gdb）
       # pyocd: 不支持 Xtensa 架构
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+    detection:
+      probe_rs_chips: ["ESP32", "ESP32D0WDQ6", "ESP32D2WDQ5"]
 
   esp32s3:
     name: "ESP32-S3"
@@ -71,6 +84,8 @@ boards:
       probe-rs: { target: "ESP32S3" }
       openocd: { target: "esp32s3", config: "board/esp32s3-builtin.cfg" }
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+    detection:
+      probe_rs_chips: ["ESP32S3", "ESP32-S3"]
 
   esp32c3:
     name: "ESP32-C3"
@@ -81,6 +96,8 @@ boards:
       probe-rs: { target: "ESP32C3" }
       openocd: { target: "esp32c3", config: "board/esp32c3-builtin.cfg" }
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
+    detection:
+      probe_rs_chips: ["ESP32C3", "ESP32-C3"]
 
   # ──── Raspberry Pi ────
   rp2040:
@@ -92,6 +109,8 @@ boards:
       probe-rs: { target: "RP2040" }
       openocd: { target: "rp2040", config: "target/rp2040.cfg" }
       pyocd: { target: "rp2040" }
+    detection:
+      probe_rs_chips: ["RP2040"]
 
   # ──── Nordic ────
   nrf52:
@@ -103,6 +122,9 @@ boards:
       probe-rs: { target: "nRF52840_xxAA" }
       openocd: { target: "nrf52", config: "target/nrf52.cfg" }
       pyocd: { target: "nrf52840" }
+    detection:
+      probe_rs_chips: ["nRF52840_xxAA", "nRF52833_xxAA", "nRF52832_xxAA",
+                        "nRF52811_xxAA", "nRF52810_xxAA"]
 
   # ──── GD32 / AT32（国产兼容系列） ────
   gd32:
@@ -113,6 +135,9 @@ boards:
     backends:
       probe-rs: { target: "GD32F303ZE" }
       openocd: { target: "stm32f1x", config: "target/stm32f1x.cfg" }
+    detection:
+      probe_rs_chips: ["GD32F303ZE", "GD32F303ZC", "GD32F303VE", "GD32F303RE",
+                        "GD32F350RB", "GD32F350CB"]
 
   at32:
     name: "AT32F403AVGT7"
@@ -122,3 +147,6 @@ boards:
     backends:
       probe-rs: { target: "AT32F403AVGT7" }
       openocd: { target: "stm32f4x", config: "target/stm32f4x.cfg" }
+    detection:
+      probe_rs_chips: ["AT32F403AVGT7", "AT32F403ACGT7", "AT32F407VGT7",
+                        "AT32F403AVCT7"]

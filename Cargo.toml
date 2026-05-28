@@ -1,7 +1,7 @@
 [package]
 name = "loading-chip"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 description = "嵌入式芯片烧录/调试 TUI 工具 — 烧录 + dap-ui 风格调试"
 license = "MIT"
 
@@ -29,3 +29,4 @@ crossbeam-channel = "0.5"
 nix = { version = "0.30", features = ["signal", "process"] }
 shellexpand = "3"
 dirs = "6"
+object = { version = "0.38", default-features = false, features = ["read_core", "elf"] }
