@@ -48,6 +48,16 @@ struct BoardConfig {
     /// 可选备注
     #[serde(default)]
     note: String,
+    /// 芯片检测映射（probe-rs 探测用）
+    #[serde(default)]
+    detection: DetectionConfig,
+}
+
+/// 芯片检测映射（YAML 反序列化用）
+#[derive(Debug, Clone, Deserialize, Default)]
+struct DetectionConfig {
+    #[serde(default)]
+    probe_rs_chips: Vec<String>,
 }
 
 /// 单个后端的目标参数（YAML 反序列化用）
@@ -139,6 +149,8 @@ pub struct BoardRegistry {
     backends: HashMap<String, HashMap<String, BackendBoardParams>>,
     /// 所有板子 ID 列表（保持 YAML 顺序）
     ids: Vec<String>,
+    /// probe-rs chip name → board_id reverse lookup
+    detection_map: HashMap<String, String>,
 }
 
 #[allow(dead_code)]
@@ -147,9 +159,10 @@ impl BoardRegistry {
     ///
     /// 搜索顺序：
     /// 1. `LOADING_CHIP_BOARDS` 环境变量指定的路径
-    /// 2. 可执行文件同目录的 `boards.yaml`
-    /// 3. 当前目录的 `boards.yaml`
-    /// 4. 项目的 `boards.yaml`（嵌入，cargo run 场景）
+    /// 2. 用户配置目录 `~/.config/loading-chip/boards.yaml`
+    /// 3. 可执行文件同目录的 `boards.yaml`
+    /// 4. 当前目录的 `boards.yaml`
+    /// 5. 项目的 `boards.yaml`（嵌入，cargo run 场景）
     pub fn load() -> Result<Self, String> {
         let content = Self::read_yaml()?;
         let file: BoardsFile =
@@ -187,23 +200,39 @@ impl BoardRegistry {
             backends.insert(id.clone(), be_map);
         }
 
+        // Build the detection reverse-lookup map
+        let mut detection_map = HashMap::new();
+        for (id, cfg) in &file.boards {
+            for chip in &cfg.detection.probe_rs_chips {
+                detection_map.insert(chip.clone(), id.clone());
+            }
+        }
+
         Ok(Self {
             info,
             backends,
             ids,
+            detection_map,
         })
     }
 
     /// 读取 YAML 文件内容
     fn read_yaml() -> Result<String, String> {
         // 1. 环境变量
-        if let Ok(p) = std::env::var("LOADING_CHIP_BOARDS") {
-            if Path::new(&p).is_file() {
+        if let Ok(p) = std::env::var("LOADING_CHIP_BOARDS")
+            && Path::new(&p).is_file() {
                 return std::fs::read_to_string(&p).map_err(|e| format!("读取 {}: {}", p, e));
+            }
+
+        // 2. 用户配置目录: ~/.config/loading-chip/boards.yaml
+        if let Some(dir) = dirs::config_dir() {
+            let p = dir.join("loading-chip").join("boards.yaml");
+            if p.is_file() {
+                return std::fs::read_to_string(&p).map_err(|e| format!("读取 {:?}: {}", p, e));
             }
         }
 
-        // 2. 可执行文件同目录
+        // 3. 可执行文件同目录
         if let Ok(exe) = std::env::current_exe() {
             let dir = exe.parent().unwrap_or(Path::new("."));
             let p = dir.join("boards.yaml");
@@ -212,13 +241,13 @@ impl BoardRegistry {
             }
         }
 
-        // 3. 当前目录
+        // 4. 当前目录
         if Path::new("boards.yaml").is_file() {
             return std::fs::read_to_string("boards.yaml")
                 .map_err(|e| format!("读取 boards.yaml: {}", e));
         }
 
-        // 4. 嵌入的默认配置（编译时 include_str!）
+        // 5. 嵌入的默认配置（编译时 include_str!）
         Ok(include_str!("../boards.yaml").to_string())
     }
 
@@ -287,6 +316,29 @@ impl BoardRegistry {
             .values()
             .filter(|b| b.supported_backends.contains(&backend.to_string()))
             .collect()
+    }
+
+    /// 根据 probe-rs 检测到的 chip name 反向查找 board ID
+    ///
+    /// 优先级：
+    /// 1. detection_map 精确匹配（忽略大小写）
+    /// 2. board ID 直接匹配（忽略大小写）
+    /// 3. 返回 None（调用方使用原始 chip name 作为 board ID）
+    pub fn resolve_by_chip_name(&self, chip_name: &str) -> Option<String> {
+        let lower = chip_name.to_lowercase();
+        // 1. detection_map 查找
+        for (key, board_id) in &self.detection_map {
+            if key.to_lowercase() == lower {
+                return Some(board_id.clone());
+            }
+        }
+        // 2. board ID 直接匹配
+        if self.info.contains_key(chip_name)
+            || self.ids.iter().any(|id| id.to_lowercase() == lower)
+        {
+            return Some(chip_name.to_string());
+        }
+        None
     }
 }
 
@@ -370,6 +422,40 @@ mod tests {
         // STM32 系列应支持
         assert!(esp_ids.contains(&&"stm32f4".to_string()));
         assert!(esp_ids.contains(&&"stm32f1".to_string()));
+    }
+
+    #[test]
+    fn detection_map_populated() {
+        let reg = BoardRegistry::load().unwrap();
+        eprintln!("detection_map len: {}", reg.detection_map.len());
+        for (k, v) in &reg.detection_map {
+            eprintln!("  {} -> {}", k, v);
+        }
+        // STM32F407VG should map to stm32f4
+        assert_eq!(
+            reg.resolve_by_chip_name("STM32F407VG"),
+            Some("stm32f4".to_string())
+        );
+        // ESP32S3 should map to esp32s3
+        assert_eq!(
+            reg.resolve_by_chip_name("ESP32S3"),
+            Some("esp32s3".to_string())
+        );
+        // Unknown chip returns None
+        assert_eq!(reg.resolve_by_chip_name("RANDOM_CHIP_XYZ"), None);
+    }
+
+    #[test]
+    fn detection_case_insensitive() {
+        let reg = BoardRegistry::load().unwrap();
+        assert_eq!(
+            reg.resolve_by_chip_name("stm32f407vg"),
+            Some("stm32f4".to_string())
+        );
+        assert_eq!(
+            reg.resolve_by_chip_name("stm32f103c8"),
+            Some("stm32f1".to_string())
+        );
     }
 
     #[test]
