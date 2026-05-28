@@ -204,7 +204,7 @@ impl BoardRegistry {
         let mut detection_map = HashMap::new();
         for (id, cfg) in &file.boards {
             for chip in &cfg.detection.probe_rs_chips {
-                detection_map.insert(chip.clone(), id.clone());
+                detection_map.insert(chip.to_lowercase(), id.clone());
             }
         }
 
@@ -326,16 +326,12 @@ impl BoardRegistry {
     /// 3. 返回 None（调用方使用原始 chip name 作为 board ID）
     pub fn resolve_by_chip_name(&self, chip_name: &str) -> Option<String> {
         let lower = chip_name.to_lowercase();
-        // 1. detection_map 查找
-        for (key, board_id) in &self.detection_map {
-            if key.to_lowercase() == lower {
-                return Some(board_id.clone());
-            }
+        // 1. detection_map 查找 (O(1) hash lookup)
+        if let Some(board_id) = self.detection_map.get(&lower) {
+            return Some(board_id.clone());
         }
-        // 2. board ID 直接匹配
-        if self.info.contains_key(chip_name)
-            || self.ids.iter().any(|id| id.to_lowercase() == lower)
-        {
+        // 2. board ID 直接匹配（小写比较）
+        if self.ids.iter().any(|id| id.to_lowercase() == lower) {
             return Some(chip_name.to_string());
         }
         None
