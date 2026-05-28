@@ -3,7 +3,7 @@
 //! 使用 ratatui 绘制烧录工具的所有界面元素。
 
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
@@ -13,6 +13,9 @@ use ratatui::{
 use crate::presets;
 
 use super::app::{App, Focus, InputMode};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static FRAME: AtomicU64 = AtomicU64::new(0);
 
 // ============================================================================
 // 配色方案 — 现代暗色主题
@@ -35,6 +38,23 @@ mod theme {
 }
 use theme::*;
 
+/// HSV → RGB 转换（用于彩虹渐变）
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+    let h = h % 360.0;
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match h as u16 {
+        0..=59 => (c, x, 0.0),
+        60..=119 => (x, c, 0.0),
+        120..=179 => (0.0, c, x),
+        180..=239 => (0.0, x, c),
+        240..=299 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    (((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8)
+}
+
 // ============================================================================
 // 顶层渲染入口
 // ============================================================================
@@ -43,18 +63,18 @@ use theme::*;
 pub fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
 
-    // 主布局：标题 / 表单 / 状态 / 快捷键
+    // 主布局：品牌栏 / 表单 / 状态 / 快捷键
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // 标题 + 模式切换
+            Constraint::Length(4), // 品牌栏
             Constraint::Min(12),   // 表单
             Constraint::Length(3), // 状态
             Constraint::Length(1), // 快捷键
         ])
         .split(area);
 
-    render_title_with_mode(f, chunks[0], app);
+    render_brand_bar(f, chunks[0]);
 
     match app.mode {
         InputMode::Done => render_result(f, chunks[1], app),
@@ -74,66 +94,32 @@ pub fn ui(f: &mut Frame, app: &App) {
 }
 
 // ============================================================================
-// 标题栏 + 模式切换按钮
+// 品牌栏 — "cmz" 彩虹渐变 + 标题
 // ============================================================================
 
-fn render_title_with_mode(f: &mut Frame, area: Rect, app: &App) {
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
+fn render_brand_bar(f: &mut Frame, area: Rect) {
+    let frame = FRAME.fetch_add(1, Ordering::Relaxed);
+    let hue_base = (frame % 360) as f32;
+    let letters = ['c', 'm', 'z'];
 
-    // 左侧标题
-    let title_bar = Block::default()
-        .borders(Borders::ALL)
-            .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Style::default().fg(WARNING));
-    let title_text = Paragraph::new("🔥  LOADING-CHIP")
-        .style(Style::default().fg(WARNING).bold())
-        .alignment(Alignment::Left)
-        .block(title_bar);
-    f.render_widget(title_text, chunks[0]);
+    let span_lines: Vec<Span> = letters.iter().enumerate().flat_map(|(i, &ch)| {
+        let hue = (hue_base + i as f32 * 120.0) % 360.0;
+        let (r, g, b) = hsv_to_rgb(hue, 0.85, 0.95);
+        vec![
+            Span::styled(ch.to_string(), Style::default().fg(Color::Rgb(r, g, b)).bold()),
+            Span::raw(" "),
+        ]
+    }).collect();
 
-    // 右侧模式切换按钮
-    let mode_bar = Block::default()
-        .borders(Borders::ALL)
-            .border_type(ratatui::widgets::BorderType::Rounded)
-        .border_style(Style::default().fg(WARNING));
-
-    let mode_focused = app.focus == Focus::ModeSwitch;
-
-    // 两个按钮：烧录模式是当前模式
-    let flash_style = if mode_focused && app.focus == Focus::ModeSwitch {
-        // 左侧（烧录）按钮选中
-        Style::default()
-            .fg(SURFACE)
-            .bg(SUCCESS)
-            .bold()
-    } else {
-        Style::default().fg(SUCCESS).bold()
-    };
-
-    let debug_style = if mode_focused {
-        // 右侧有焦点，光标在右侧
-        Style::default()
-            .fg(SURFACE)
-            .bg(ACCENT)
-            .bold()
-    } else {
-        Style::default().fg(TEXT_DIM)
-    };
-
-    let mode_text = Line::from(vec![
-        Span::styled(" 🔥烧录 ", flash_style),
-        Span::styled(" │ ", Style::default().fg(TEXT_DIM)),
-        Span::styled(" 🐛调试 ", debug_style),
-    ]);
+    let brand_line = Line::from(span_lines);
+    let title_line = Line::from(Span::styled("🔥  LOADING-CHIP", Style::default().fg(WARNING).bold()));
 
     f.render_widget(
-        Paragraph::new(mode_text)
-            .alignment(Alignment::Center)
-            .block(mode_bar),
-        chunks[1],
+        Paragraph::new(vec![brand_line, title_line])
+            .block(Block::default().borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(WARNING))),
+        area,
     );
 }
 
@@ -363,12 +349,12 @@ fn render_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         _ => return,
     };
 
-    // 计算弹出位置（标题3 + 模式切换一行）
-    // 布局：标题(3) + 字段高
+    // 计算弹出位置（品牌栏4 + 字段高）
+    // 布局：品牌栏(4) + 字段高
     let popup_y = match app.focus {
-        Focus::Backend => 6,
-        Focus::Interface => 10,
-        Focus::Target => 14,
+        Focus::Backend => 7,
+        Focus::Interface => 11,
+        Focus::Target => 15,
         _ => return,
     };
     let popup_area = Rect {
@@ -415,8 +401,8 @@ fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         return;
     }
 
-    // 标题3 + 模式切换 + 后端3+1 + 接口3+1 + 芯片3+1
-    let popup_y = 15;
+    // 品牌栏4 + 后端3+1 + 接口3+1 + 芯片3+1
+    let popup_y = 16;
     // ELF 输入框高度不影响下拉位置（下拉在表单外部）
     let elf_rows = app.elf_files.len().min(12);
     let popup_area = Rect {
