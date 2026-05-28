@@ -306,40 +306,22 @@ impl App {
         self.status = format!("正在烧录 {} → {} ...", self.interface, self.target);
 
         let be = FlashBackend::from_str(&self.backend);
-        let backend_name = be.yaml_key();
+        let elf = if self.elf_path.is_empty() { "firmware.elf" } else { &self.elf_path };
 
-        // 通过 registry 解析板子+后端参数
-        let (target, board_config, board_extra_args) = match self.registry.resolve(&self.target, backend_name) {
-            Ok(params) => (params.target, params.config, params.extra_args),
+        let config = match FlashConfig::from_registry(
+            be, &self.registry, &self.target, &self.interface, elf,
+            &self.gdb_port, &self.pyocd_path, self.timeout_secs,
+        ) {
+            Ok(cfg) => cfg,
             Err(msg) => {
-                self.status = msg;
+                self.status = msg.clone();
                 self.mode = InputMode::Normal;
                 self.result = Some(FlashResult {
-                    success: false,
-                    message: self.status.clone(),
-                    command: String::new(),
-                    stdout: None,
-                    stderr: None,
+                    success: false, message: msg,
+                    command: String::new(), stdout: None, stderr: None,
                 });
                 return;
             }
-        };
-
-        let config = FlashConfig {
-            backend: be,
-            interface: self.interface.clone(),
-            target,
-            elf_path: if self.elf_path.is_empty() {
-                "firmware.elf".to_string()
-            } else {
-                self.elf_path.clone()
-            },
-            gdb_port: self.gdb_port.clone(),
-            pyocd_path: self.pyocd_path.clone(),
-            timeout_secs: self.timeout_secs,
-            board_config,
-            board_extra_args,
-            board_id: self.target.clone(),
         };
 
         let res = do_flash(&config);

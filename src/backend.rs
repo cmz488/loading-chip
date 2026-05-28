@@ -139,6 +139,35 @@ pub struct FlashConfig {
     pub board_id: String,
 }
 
+impl FlashConfig {
+    /// 从 BoardRegistry 构建 FlashConfig（统一的工厂方法）
+    pub fn from_registry(
+        be: FlashBackend,
+        registry: &crate::board::BoardRegistry,
+        board_id: &str,
+        interface: &str,
+        elf_path: &str,
+        gdb_port: &str,
+        pyocd_path: &str,
+        timeout_secs: u64,
+    ) -> Result<Self, String> {
+        let backend_name = be.yaml_key();
+        let params = registry.resolve(board_id, backend_name)?;
+        Ok(Self {
+            backend: be,
+            interface: interface.to_string(),
+            target: params.target,
+            elf_path: elf_path.to_string(),
+            gdb_port: gdb_port.to_string(),
+            pyocd_path: pyocd_path.to_string(),
+            timeout_secs,
+            board_config: params.config,
+            board_extra_args: params.extra_args,
+            board_id: board_id.to_string(),
+        })
+    }
+}
+
 /// 烧录结果，可作为 JSON 输出供 IDE 集成使用
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FlashResult {

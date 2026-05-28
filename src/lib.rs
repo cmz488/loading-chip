@@ -212,9 +212,10 @@ fn run_headless(
 ) -> io::Result<()> {
     match (interface, target, elf) {
         (Some(i), Some(t), Some(e)) => {
-            let backend_name = be.yaml_key();
-            let resolved = match registry.resolve(&t, backend_name) {
-                Ok(p) => p,
+            let config = match FlashConfig::from_registry(
+                be, registry, &t, &i, &e, &gdb_port, &pyocd_path, timeout,
+            ) {
+                Ok(cfg) => cfg,
                 Err(err) => {
                     let result = flash::FlashResult {
                         success: false,
@@ -226,18 +227,6 @@ fn run_headless(
                     println!("{}", serde_json::to_string_pretty(&result).unwrap());
                     std::process::exit(1);
                 }
-            };
-            let config = FlashConfig {
-                backend: be,
-                interface: i,
-                target: resolved.target,
-                elf_path: e,
-                gdb_port,
-                pyocd_path,
-                timeout_secs: timeout,
-                board_config: resolved.config,
-                board_extra_args: resolved.extra_args,
-                board_id: t.clone(),
             };
             let result = do_flash(&config);
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
@@ -268,21 +257,10 @@ fn run_cli_mode(
     pyocd_path: String,
     timeout: u64,
 ) -> io::Result<()> {
-    let backend_name = be.yaml_key();
-    let resolved = registry.resolve(target, backend_name);
-    let config = match resolved {
-        Ok(params) => FlashConfig {
-            backend: be,
-            interface: interface.to_string(),
-            target: params.target,
-            elf_path: elf.to_string(),
-            gdb_port,
-            pyocd_path,
-            timeout_secs: timeout,
-            board_config: params.config,
-            board_extra_args: params.extra_args,
-            board_id: target.to_string(),
-        },
+    let config = match FlashConfig::from_registry(
+        be, registry, target, interface, elf, &gdb_port, &pyocd_path, timeout,
+    ) {
+        Ok(cfg) => cfg,
         Err(err) => {
             eprintln!("{}", err);
             std::process::exit(1);
