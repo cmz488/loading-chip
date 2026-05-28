@@ -199,18 +199,34 @@ fn probe_rs_rtt_loop(
         rtt = attach_rtt_fallback(&mut core, chip, running);
     }
 
-    // 3. 最终回退：ARM Cortex-M SRAM 范围扫描
+    // 3. 最终回退：多区域 SRAM 扫描
     let mut rtt = match rtt {
         Some(r) => r,
         None => {
-            let _ = sender.send(RttOutput { channel: 0, text: "🔎 SRAM 范围扫描 (0x20000000-0x20020000)...".into() });
-            // 优先扫描 ARM SRAM 前 128KB（覆盖 STM32/MSPM0/nRF/RP2040 等）
-            if let Ok(r) = Rtt::attach_region(&mut core, &ScanRegion::range(0x2000_0000..0x2002_0000)) {
-                r
-            } else {
-                // 最后尝试 probe-rs 默认的全 RAM 扫描
-                let _ = sender.send(RttOutput { channel: 0, text: "🔎 默认 RAM 扫描...".into() });
-                Rtt::attach(&mut core).map_err(|e| format!("RTT attach 失败: {}", e))?
+            // 按可能性排序扫描常见 SRAM 区域
+            let regions: &[std::ops::Range<u64>] = &[
+                0x2000_0000..0x2004_0000, // ARM Cortex-M 主 SRAM (256KB)
+                0x2400_0000..0x2408_0000, // STM32H7 AXI SRAM
+                0x3000_0000..0x3004_0000, // STM32H7/F7 SDRAM bank
+            ];
+            let mut found = None;
+            for region in regions {
+                if !running.load(Ordering::SeqCst) { break; }
+                let _ = sender.send(RttOutput {
+                    channel: 0,
+                    text: format!("🔎 扫描 SRAM 0x{:08X}-0x{:08X}...", region.start, region.end),
+                });
+                if let Ok(r) = Rtt::attach_region(&mut core, &ScanRegion::range(region.clone())) {
+                    found = Some(r);
+                    break;
+                }
+            }
+            match found {
+                Some(r) => r,
+                None => {
+                    let _ = sender.send(RttOutput { channel: 0, text: "🔎 默认 RAM 扫描...".into() });
+                    Rtt::attach(&mut core).map_err(|e| format!("RTT attach 失败: {}", e))?
+                }
             }
         }
     };
@@ -270,33 +286,61 @@ fn attach_rtt_fallback(
 
     let chip_lower = chip.to_lowercase();
 
-    // ESP32 已知 RTT 地址
-    if chip_lower.contains("esp32") {
-        let known: &[u64] = &[0x3FC9_1200, 0x3FC9_1000, 0x3FC8_8000, 0x3FFB_0000];
+    // === ESP32 系列（XTensa / RISC-V）===
+    if chip_lower.contains("esp") {
+        // ESP32-S3/C3: SRAM @ 0x3FC8_0000-0x3FD0_0000
+        // ESP32:      SRAM @ 0x3FFB_0000 (DRAM)
+        let known: &[u64] = &[0x3FC9_1200, 0x3FC9_1000, 0x3FC8_8000, 0x3FFB_0000, 0x3FCA_0000];
         for &addr in known {
             if !running.load(Ordering::SeqCst) { break; }
             for offset in [-0x2000i64, -0x1000, 0, 0x1000, 0x2000] {
                 let probe = (addr as i64 + offset) as u64;
-                if !(0x3FC8_0000..=0x3FD0_0000).contains(&probe) { continue; }
+                if probe < 0x3FC8_0000 || probe > 0x3FD0_0000 { continue; }
                 if let Ok(r) = Rtt::attach_region(core, &ScanRegion::Exact(probe)) {
                     return Some(r);
                 }
             }
         }
-        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x3FC8_8000..0x3FD0_0000)) {
+        // ESP32 DRAM + SRAM1 范围扫描
+        for range in [0x3FC8_8000..0x3FD0_0000, 0x3FFB_0000..0x3FFE_0000] {
+            if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(range)) {
+                return Some(r);
+            }
+        }
+        return None;
+    }
+
+    // === ARM Cortex-M 通用 ===
+    // 所有 Cortex-M MCU 的主 SRAM 起始于 0x20000000
+    // 部分高端芯片有额外的 SRAM 区域
+
+    // Region 1: 主 SRAM @ 0x20000000 (覆盖 MSPM0/STM32F1-F4-G0/nRF52/RP2040/GD32/AT32)
+    if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x2000_0000..0x2004_0000)) {
+        return Some(r);
+    }
+
+    // Region 2: STM32H7 AXI SRAM @ 0x24000000 (STM32H743/H750)
+    if chip_lower.contains("stm32h7") || chip_lower.contains("h7") {
+        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x2400_0000..0x2408_0000)) {
             return Some(r);
         }
     }
 
-    // ARM Cortex-M 通用 SRAM 区域扫描 (STM32, MSPM0, nRF52, RP2040...)
-    // 大部分 Cortex-M MCU 的 SRAM 起始于 0x20000000
-    if chip_lower.contains("mspm0") || chip_lower.contains("stm32")
-        || chip_lower.contains("nrf52") || chip_lower.contains("rp2040")
-        || chip_lower.contains("gd32") || chip_lower.contains("at32")
+    // Region 3: STM32H7 DTCM @ 0x20000000 (already covered above, but ITCM is @ 0x00000000)
+    // Region 4: Some STM32F7/H7 have SRAM @ 0x30000000 (SDRAM bank)
+    if chip_lower.contains("stm32h7") || chip_lower.contains("stm32f7") {
+        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x3000_0000..0x3004_0000)) {
+            return Some(r);
+        }
+    }
+
+    // Region 5: Broad SRAM scan for unknown ARM chips (慢但全面)
+    // 仅对不在已知列表中的芯片执行
+    if !chip_lower.contains("stm32") && !chip_lower.contains("mspm0")
+        && !chip_lower.contains("nrf") && !chip_lower.contains("rp2040")
     {
-        // 扫描 SRAM 前 128KB: 0x20000000 - 0x20020000
-        // 覆盖 MSPM0G3507 (32KB @ 0x20000000) 和 STM32F4 (128KB+)
-        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x2000_0000..0x2002_0000)) {
+        // 扫描标准 ARM SRAM 区域前 256KB
+        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x2000_0000..0x2004_0000)) {
             return Some(r);
         }
     }
