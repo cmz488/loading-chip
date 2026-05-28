@@ -38,6 +38,10 @@ mod theme {
 }
 use theme::*;
 
+// 烧录动画帧
+const SPIN_FRAMES: &[&str] = &["\u{23f3}", "\u{231b}"];
+const BOUNCE_FRAMES: &[&str] = &["\u{25cf}", "\u{25c9}", "\u{25ce}", "\u{25cc}", "\u{25cb}"];
+
 /// HSV → RGB 转换（用于彩虹渐变）
 fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let h = h % 360.0;
@@ -296,35 +300,37 @@ fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
-/// 渲染烧录按钮
+/// 渲染烧录按钮（带动画）
 fn render_flash_button(f: &mut Frame, area: Rect, app: &App) {
     let btn_focused = app.focus == Focus::FlashBtn;
-    let btn_style = if btn_focused {
-        Style::default().fg(SURFACE).bg(SUCCESS).bold()
+    let frame = FRAME.load(Ordering::Relaxed);
+
+    let (btn_style, border_style) = if app.mode == InputMode::Flashing {
+        // 脉冲高亮
+        let pulse = if (frame / 15) % 2 == 0 { WARNING } else { Color::Rgb(200, 150, 20) };
+        (Style::default().fg(Color::Black).bg(pulse).bold(),
+         Style::default().fg(pulse).bold())
+    } else if btn_focused {
+        (Style::default().fg(Color::Black).bg(SUCCESS).bold(),
+         Style::default().fg(SUCCESS).bold())
     } else {
-        Style::default().fg(TEXT).bg(TEXT_DIM)
+        (Style::default().fg(TEXT).bg(SURFACE),
+         Style::default().fg(BORDER))
     };
 
     let label = if app.mode == InputMode::Flashing {
-        "⏳  正在烧录中..."
+        let spin = SPIN_FRAMES[(frame / 8) as usize % 2];
+        let bounce = BOUNCE_FRAMES[(frame / 4) as usize % 5];
+        format!("{}  正在烧录中... {}", spin, bounce)
     } else {
-        "🚀  开始烧录 (Enter)"
-    };
-
-    let text = Text::from(Line::from(Span::styled(label, btn_style)).centered());
-    let border_style = if btn_focused {
-        Style::default().fg(SUCCESS).bold()
-    } else {
-        Style::default().fg(TEXT_DIM)
+        "🚀  开始烧录 (Enter)".to_string()
     };
 
     f.render_widget(
-        Paragraph::new(text).block(
-            Block::default()
-                .borders(Borders::ALL)
-                    .border_type(ratatui::widgets::BorderType::Rounded)
-                .border_style(border_style),
-        ),
+        Paragraph::new(Line::from(Span::styled(label, btn_style)).centered()).block(
+            Block::default().borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(border_style)),
         area,
     );
 }
