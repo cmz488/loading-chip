@@ -1,6 +1,6 @@
 //! 芯片自动检测 — 通过 probe-rs 识别连接的调试探针和芯片
 //!
-//! 模块只在 `debug` feature 启用时可用。
+//! 检测接口始终可用；probe-rs 实现在 debug feature 控制下编译。
 
 /// 检测到的芯片信息
 #[derive(Debug, Clone)]
@@ -57,7 +57,8 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
                 s if s.contains("jlink") || s.contains("j-link") => "jlink".to_string(),
                 s if s.contains("cmsis-dap") => "cmsis-dap".to_string(),
                 s if s.contains("daplink") => "daplink".to_string(),
-                s if s.contains("esp") || s.contains("jtag") => "usb-jtag".to_string(),
+                s if s.contains("esp") => "usb-jtag".to_string(),
+                s if s.contains("jtag") => "jtag".to_string(),
                 _ => "swd".to_string(),
             };
 
