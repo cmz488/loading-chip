@@ -1,13 +1,15 @@
 //! loading-chip 🔥 — 嵌入式芯片烧录/调试 TUI 工具
 //!
 //! 通过 TUI 界面收集烧录参数，自动调用 arm-none-eabi-gdb / OpenOCD / probe-rs 完成固件烧录。
-//! 同时提供命令行模式和 dap-ui 风格调试界面。
+//! 同时提供命令行模式、REST API 和 RTT 实时监视。
 //!
 //! ## 用法
 //! ```text
-//! loading-chip run              → 启动 TUI 交互模式
+//! loading-chip run              → TUI 交互模式（烧录 + RTT 监视）
 //! loading-chip run --headless   → 无头模式，JSON 输出（供 IDE 调用）
-//! loading-chip debug -e <ELF>   → 调试模式，dap-ui 界面
+//! loading-chip run --api        → 启动 REST API 服务
+//! loading-chip debug -e <ELF>   → RTT 实时监视模式
+//! loading-chip init             → 检测本地工具链并生成配置
 //! loading-chip --help           → 查看帮助
 //! ```
 //!
@@ -18,11 +20,11 @@
 //! - pyocd    → pyOCD（Python 烧录/调试工具，CMSIS-Pack 生态）
 //!
 //! ## 支持的调试器
-//! swd, jtag, stlink, jlink, cmsis-dap, daplink
+//! stlink, jlink, cmsis-dap, daplink, xds110, swd, jtag
 //!
 //! ## 支持的目标芯片
 //! stm32f1, stm32f4, stm32h7, stm32g0, esp32, esp32s3, esp32c3,
-//! rp2040, nrf52, gd32, at32
+//! rp2040, nrf52, gd32, at32, mspm0g3507
 
 mod api;
 mod app;

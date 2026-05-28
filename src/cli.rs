@@ -19,7 +19,7 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Commands {
-    /// 运行烧录（默认命令）
+    /// 运行烧录（默认命令：启动 TUI，或 --headless 输出 JSON，或 --api 启动 HTTP 服务）
     Run {
         /// 烧录后端: gdb, openocd, probe-rs, pyocd（默认 gdb）
         #[arg(short = 'b', long, default_value = "gdb", value_name = "后端")]
@@ -73,7 +73,7 @@ pub enum Commands {
         output: Option<String>,
     },
 
-    /// 调试模式：自动启动 GDB Server + GDB MI 客户端 + dap-ui 界面
+    /// 调试模式：启动 RTT 实时监视器（支持 probe-rs / OpenOCD / pyOCD / GDB）
     Debug {
         /// ELF 固件文件路径（必填）
         #[arg(short = 'e', long, value_name = "文件")]
