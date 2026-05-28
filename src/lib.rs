@@ -38,6 +38,7 @@ mod setup;
 mod tui;
 
 use std::io;
+use std::sync::Arc;
 
 use clap::Parser;
 use flash::{do_flash, FlashBackend, FlashConfig};
@@ -52,7 +53,7 @@ pub fn run() -> io::Result<()> {
     eprintln!("📋 已加载 {} 块板子配置", registry.len());
 
     match cli.command {
-        None => run_tui_default()?,
+        None => run_tui_default(Arc::new(registry))?,
         Some(cli::Commands::Run {
             backend,
             interface,
@@ -87,7 +88,13 @@ pub fn run() -> io::Result<()> {
 
 /// 循环运行 TUI（烧录 ↔ 调试互相切换，直到用户退出）
 /// 保留用户选择的状态，从调试返回后不丢失之前的设置
-fn run_tui_loop(gdb_port: String, pyocd_path: String, timeout_secs: u64) -> io::Result<()> {
+fn run_tui_loop(
+    gdb_port: String,
+    pyocd_path: String,
+    timeout_secs: u64,
+    detected_chips: Vec<chip_detect::DetectedChip>,
+    registry: Arc<board::BoardRegistry>,
+) -> io::Result<()> {
     let current_gdb_port = gdb_port;
     let current_pyocd = pyocd_path;
     let current_timeout = timeout_secs;
@@ -99,6 +106,8 @@ fn run_tui_loop(gdb_port: String, pyocd_path: String, timeout_secs: u64) -> io::
             current_pyocd.clone(),
             current_timeout,
             saved_app.take(),
+            detected_chips.clone(),
+            registry.clone(),
         )?;
 
         match exit {
@@ -131,8 +140,15 @@ fn run_tui_loop(gdb_port: String, pyocd_path: String, timeout_secs: u64) -> io::
     Ok(())
 }
 
-fn run_tui_default() -> io::Result<()> {
-    run_tui_loop("3333".to_string(), String::new(), 60)
+fn run_tui_default(registry: Arc<board::BoardRegistry>) -> io::Result<()> {
+    let detected = chip_detect::detect_chips();
+    if !detected.is_empty() {
+        eprintln!("检测到 {} 个设备:", detected.len());
+        for d in &detected {
+            eprintln!("  - {} (芯片: {})", d.probe_name, d.chip_name);
+        }
+    }
+    run_tui_loop("3333".to_string(), String::new(), 60, detected, registry)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -177,7 +193,8 @@ fn run_flash(
     }
 
     // TUI 模式（支持烧录 ↔ 调试切换）
-    run_tui_loop(gdb_port, pyocd_path, timeout)
+    let detected = chip_detect::detect_chips();
+    run_tui_loop(gdb_port, pyocd_path, timeout, detected, Arc::new(registry.clone()))
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -3,7 +3,10 @@
 //! 管理烧录参数、UI 焦点、输入模式和运行状态。
 
 use ratatui::widgets::ListState;
+use std::sync::Arc;
 
+use crate::board::BoardRegistry;
+use crate::chip_detect::DetectedChip;
 use crate::flash::{do_flash, FlashBackend, FlashConfig, FlashResult};
 use crate::presets;
 
@@ -73,11 +76,21 @@ pub struct App {
 
     // --- 退出标志 ---
     pub should_quit: bool,
+
+    /// 板子注册表（只读共享）
+    pub registry: Arc<BoardRegistry>,
+    /// 自动检测到的芯片列表
+    pub detected_chips: Vec<DetectedChip>,
 }
 
 impl App {
     /// 创建应用初始状态
-    pub fn new(gdb_port: String, pyocd_path: String, timeout_secs: u64) -> Self {
+    pub fn new(
+        gdb_port: String,
+        pyocd_path: String,
+        timeout_secs: u64,
+        registry: Arc<BoardRegistry>,
+    ) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         Self {
@@ -106,6 +119,8 @@ impl App {
             debug_gdb: String::new(),
             switch_to_debug: false,
             should_quit: false,
+            registry,
+            detected_chips: Vec::new(),
         }
     }
 

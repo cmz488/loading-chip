@@ -10,6 +10,7 @@ pub mod ui;
 pub mod debug_ui;
 
 use std::io::{self, stdout, IsTerminal};
+use std::sync::Arc;
 
 use crossterm::{
     event::{self, Event, KeyEventKind},
@@ -17,6 +18,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
+use crate::board::BoardRegistry;
+use crate::chip_detect::DetectedChip;
 use self::app::App;
 use self::debug_ui::DebugAppState;
 use self::events::handle_key;
@@ -49,6 +52,8 @@ pub fn run_with_resume(
     pyocd_path: String,
     timeout_secs: u64,
     resume_app: Option<App>,
+    detected_chips: Vec<DetectedChip>,
+    registry: Arc<BoardRegistry>,
 ) -> io::Result<(TuiExit, Option<App>)> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -57,7 +62,37 @@ pub fn run_with_resume(
     let backend_t = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend_t)?;
 
-    let mut app = resume_app.unwrap_or_else(|| App::new(gdb_port, pyocd_path, timeout_secs));
+    let mut app = resume_app.unwrap_or_else(move || {
+        let mut app = App::new(gdb_port, pyocd_path, timeout_secs, registry);
+        // Auto-fill from detection
+        if let Some(detected) = detected_chips.first() {
+            let board_id = detected
+                .board_id
+                .clone()
+                .unwrap_or_else(|| detected.chip_name.clone());
+            // Try to resolve; if it fails, use the raw chip name
+            if app.registry.resolve(&board_id, "probe-rs").is_ok() {
+                app.target = board_id;
+            } else {
+                app.target = detected.chip_name.clone();
+            }
+            // Set interface from detection
+            app.interface = detected.suggested_interface.clone();
+            let iface_keys = crate::presets::iface_keys();
+            if let Some(idx) = iface_keys
+                .iter()
+                .position(|k| *k == detected.suggested_interface)
+            {
+                app.iface_idx = idx;
+            }
+            app.status = format!(
+                "已检测到: {} (芯片: {})",
+                detected.probe_name, detected.chip_name
+            );
+            app.detected_chips = detected_chips;
+        }
+        app
+    });
     let result = run_flash_tui_inner(&mut terminal, &mut app);
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
