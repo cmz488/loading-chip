@@ -21,22 +21,27 @@ impl Backend for OpenOcdBackend {
     }
 
     fn build_args(&self, config: &FlashConfig) -> Vec<String> {
+        // 命令顺序重要：
+        // 1. interface 配置（加载探头驱动）
+        // 2. transport select + adapter speed（必须在 target 之前）
+        // 3. target 配置（加载芯片 flash 算法）
+        // 4. program 命令
         let mut args = vec![
             "-f".to_string(),
             mappings::openocd_interface_cfg(&config.interface).into(),
-            "-f".to_string(),
-            mappings::openocd_target_cfg(&config.target).into(),
         ];
 
-        // 根据芯片架构自动选择传输协议：
-        // - ARM Cortex-M → SWD（ARM 标准调试协议）
-        // - Xtensa / RISC-V → JTAG（ESP32 系列使用）
-        // - ESP target 配置文件自带传输选择，无需手动指定
+        // 传输协议选择（target 配置加载前设置，兼容 CMSIS-DAP 克隆探头）
         if !config.target.starts_with("esp") {
             args.push("-c".into());
             args.push("transport select swd".into());
+            // 降低适配器速度提高克隆探头稳定性
+            args.push("-c".into());
+            args.push("adapter speed 1000".into());
         }
 
+        args.push("-f".into());
+        args.push(mappings::openocd_target_cfg(&config.target).into());
         args.push("-c".into());
         args.push(format!("program {} verify reset exit", config.elf_path));
 
@@ -85,9 +90,12 @@ mod tests {
     #[test]
     fn args_swd() {
         let args = OpenOcdBackend.build_args(&cfg());
-        assert!(args.iter().any(|s| s == "interface/cmsis-dap.cfg"));
-        assert!(args.iter().any(|s| s == "target/stm32f4x.cfg"));
+        // interface 在 target 之前
+        let iface_pos = args.iter().position(|s| s == "interface/cmsis-dap.cfg").unwrap();
+        let target_pos = args.iter().position(|s| s == "target/stm32f4x.cfg").unwrap();
+        assert!(iface_pos < target_pos, "interface must come before target");
         assert!(args.iter().any(|s| s == "transport select swd"));
+        assert!(args.iter().any(|s| s == "adapter speed 1000"));
         assert!(args
             .iter()
             .any(|s| s.contains("program a.elf verify reset exit")));
@@ -96,11 +104,11 @@ mod tests {
     #[test]
     fn args_esp32_uses_interface_and_target() {
         let args = OpenOcdBackend.build_args(&esp_cfg());
-        // ESP32 现在也使用 interface + target，不再依赖 board/xxx.cfg
         assert!(args.iter().any(|s| s == "interface/esp_usb_jtag.cfg"));
         assert!(args.iter().any(|s| s == "target/esp32s3.cfg"));
-        // ESP 芯片不添加 transport select
+        // ESP 芯片不添加 transport select 和 adapter speed
         assert!(!args.iter().any(|s| s.contains("transport select")));
+        assert!(!args.iter().any(|s| s.contains("adapter speed")));
         assert!(args
             .iter()
             .any(|s| s.contains("program a.elf verify reset exit")));
