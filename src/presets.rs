@@ -30,22 +30,24 @@ pub const INTERFACES: &[(&str, &str)] = &[
     ("jlink", "J-Link（SEGGER 专业调试器，速度快）"),
     ("cmsis-dap", "CMSIS-DAP（ARM 标准调试固件）"),
     ("daplink", "DAP-Link（开源 CMSIS-DAP 实现）"),
+    ("xds110", "XDS110（TI 官方调试器，MSPM0/MSP430 首选）"),
 ];
 
 /// 目标芯片预设
 /// 每个元素: (key, 描述)
 pub const TARGETS: &[(&str, &str)] = &[
     ("stm32f1", "STM32F103 (Cortex-M3, 72MHz, 国产平替多)"),
-    ("stm32f4", "STM32F407/429 (Cortex-M4, 168MHz, 带 FPU/DSP)"),
+    ("stm32f4", "STM32F407/429 (Cortex-M4, 168/180MHz, 带 FPU/DSP)"),
     ("stm32h7", "STM32H743/750 (Cortex-M7, 480MHz)"),
     ("stm32g0", "STM32G0 (Cortex-M0+, 低功耗入门)"),
     ("esp32", "ESP32 (Xtensa 双核, WiFi/BLE, 需外接调试器)"),
     ("esp32s3", "ESP32-S3 (Xtensa 双核, 内置 USB-JTAG)"),
     ("esp32c3", "ESP32-C3 (RISC-V 单核, 内置 USB-JTAG)"),
-    ("rp2040", "RP2040 (Cortex-M0+, 树莓派芯片)"),
+    ("rp2040", "RP2040 (Cortex-M0+ 双核, 133MHz, 树莓派芯片)"),
     ("nrf52", "nRF52840 (Cortex-M4, BLE 5.0, Nordic 低功耗)"),
     ("gd32", "GD32F303/350 (Cortex-M4)"),
     ("at32", "AT32F403A/407 (Cortex-M4, 雅特力)"),
+    ("mspm0g3507", "MSPM0G3507 (Cortex-M0+, 80MHz, TI 混合信号 MCU)"),
 ];
 
 /// 根据 key 查找后端描述

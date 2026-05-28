@@ -14,6 +14,7 @@ pub fn openocd_interface_cfg(interface: &str) -> &'static str {
         "cmsis-dap" | "daplink" => "interface/cmsis-dap.cfg",
         "swd" => "interface/cmsis-dap.cfg",
         "jtag" => "interface/jlink.cfg",
+        "xds110" => "interface/xds110.cfg",
         _ => "interface/cmsis-dap.cfg",
     }
 }
@@ -29,9 +30,10 @@ pub fn openocd_target_cfg(target: &str) -> &'static str {
         "esp32s3" => "board/esp32s3-builtin.cfg",
         "esp32c3" => "board/esp32c3-builtin.cfg",
         "rp2040" => "target/rp2040.cfg",
-        "nrf52" => "target/nrf52.cfg",
+        "nrf52" => "target/nrf52840.cfg",
         "gd32" => "target/stm32f1x.cfg",
         "at32" => "target/stm32f4x.cfg",
+        "mspm0g3507" => "target/ti_mspm0.cfg",
         _ => "target/stm32f1x.cfg",
     }
 }
@@ -54,6 +56,7 @@ pub fn probe_rs_chip(target: &str) -> &str {
         "nrf52" => "nRF52840_xxAA",
         "gd32" => "GD32F303ZE",
         "at32" => "AT32F403AVGT7",
+        "mspm0g3507" => "MSPM0G3507",
         _ => target,
     }
 }
@@ -76,6 +79,7 @@ pub fn pyocd_target(target: &str) -> &str {
         "nrf52" => "nrf52840",
         "gd32" => "gd32f303ze",
         "at32" => "at32f403avgt7",
+        "mspm0g3507" => "mspm0g3507",
         _ => target,
     }
 }

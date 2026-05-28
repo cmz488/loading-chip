@@ -109,6 +109,7 @@ boards:
       probe-rs: { target: "RP2040" }
       openocd: { target: "rp2040", config: "target/rp2040.cfg" }
       pyocd: { target: "rp2040" }
+      gdb: { target: "rp2040" }
     detection:
       probe_rs_chips: ["RP2040"]
 
@@ -120,8 +121,9 @@ boards:
     interfaces: [swd, jlink]
     backends:
       probe-rs: { target: "nRF52840_xxAA" }
-      openocd: { target: "nrf52", config: "target/nrf52.cfg" }
+      openocd: { target: "nrf52", config: "target/nrf52840.cfg" }
       pyocd: { target: "nrf52840" }
+      gdb: { target: "nrf52" }
     detection:
       probe_rs_chips: ["nRF52840_xxAA", "nRF52833_xxAA", "nRF52832_xxAA",
                         "nRF52811_xxAA", "nRF52810_xxAA"]
@@ -135,6 +137,8 @@ boards:
     backends:
       probe-rs: { target: "GD32F303ZE" }
       openocd: { target: "stm32f1x", config: "target/stm32f1x.cfg" }
+      pyocd: { target: "gd32f303ze" }
+      gdb: { target: "gd32" }
     detection:
       probe_rs_chips: ["GD32F303ZE", "GD32F303ZC", "GD32F303VE", "GD32F303RE",
                         "GD32F350RB", "GD32F350CB"]
@@ -147,6 +151,23 @@ boards:
     backends:
       probe-rs: { target: "AT32F403AVGT7" }
       openocd: { target: "stm32f4x", config: "target/stm32f4x.cfg" }
+      pyocd: { target: "at32f403avgt7" }
+      gdb: { target: "at32" }
     detection:
       probe_rs_chips: ["AT32F403AVGT7", "AT32F403ACGT7", "AT32F407VGT7",
                         "AT32F403AVCT7"]
+
+  # ──── TI MSPM0 系列 ────
+  # ⚠️ probe-rs 暂不支持 MSPM0 系列，推荐使用 OpenOCD + XDS110
+  # ⚠️ pyOCD 不支持 MSPM0（无 CMSIS-Pack）
+  mspm0g3507:
+    name: "MSPM0G3507"
+    manufacturer: "Texas Instruments"
+    architecture: arm
+    interfaces: [swd, xds110]
+    backends:
+      openocd: { target: "ti_mspm0", config: "target/ti_mspm0.cfg" }
+      gdb: { target: "mspm0g3507" }
+    note: "probe-rs 暂不支持 MSPM0 系列，推荐使用 OpenOCD + XDS110；pyOCD 不支持 MSPM0"
+    detection:
+      probe_rs_chips: []
