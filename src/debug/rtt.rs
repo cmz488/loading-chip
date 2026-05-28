@@ -32,13 +32,15 @@ pub trait RttClient: Send {
 // RTT 配置
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RttConfig {
     pub backend: RttBackend,
     pub chip: String,
     pub probe: String,
     pub telnet_port: u16,
     pub elf_path: Option<String>,
+    /// 可选的 broadcast sender — RTT 数据同时发布到此通道（供 API WebSocket 订阅）
+    pub broadcast: Option<tokio::sync::broadcast::Sender<RttOutput>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,11 +84,12 @@ impl ProbeRsRtt {
             let chip = config.chip.clone();
             let probe_desc = config.probe.clone();
             let elf_path = config.elf_path.clone();
+            let broadcast = config.broadcast.clone();
 
             let handle = thread::Builder::new()
                 .name("probe-rs-rtt".into())
                 .spawn(move || {
-                    if let Err(e) = probe_rs_rtt_loop(&chip, &probe_desc, &running_clone, &sender, elf_path.as_deref()) {
+                    if let Err(e) = probe_rs_rtt_loop(&chip, &probe_desc, &running_clone, &sender, elf_path.as_deref(), broadcast) {
                         let _ = sender.send(RttOutput { channel: 1, text: format!("RTT 错误: {}", e) });
                     }
                 })
@@ -127,6 +130,7 @@ fn probe_rs_rtt_loop(
     running: &AtomicBool,
     sender: &Sender<RttOutput>,
     elf_path: Option<&str>,
+    broadcast_tx: Option<tokio::sync::broadcast::Sender<RttOutput>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use probe_rs::probe::list::Lister;
     use probe_rs::rtt::{Rtt, ScanRegion};
@@ -240,6 +244,7 @@ fn probe_rs_rtt_loop(
     let num_channels = rtt.up_channels().len();
     let mut line_bufs: Vec<String> = vec![String::new(); num_channels];
     let mut buf = vec![0u8; 4096];
+    let broadcast = broadcast_tx.clone();
 
     while running.load(Ordering::SeqCst) {
         for i in 0..num_channels {
@@ -247,15 +252,15 @@ fn probe_rs_rtt_loop(
                 match ch.read(&mut core, &mut buf) {
                     Ok(count) if count > 0 => {
                         line_bufs[i].push_str(&String::from_utf8_lossy(&buf[..count]));
-                        // 按换行符拆分为完整行
                         while let Some(nl) = line_bufs[i].find('\n') {
                             let line = line_bufs[i][..nl].trim_end_matches('\r').to_string();
                             line_bufs[i].drain(..=nl);
-                            // 跳过空行，只发送有内容的行
-                            if !line.is_empty()
-                                && sender.send(RttOutput { channel: i as u8, text: line }).is_err()
-                            {
-                                return Ok(());
+                            if !line.is_empty() {
+                                let out = RttOutput { channel: i as u8, text: line };
+                                // 发送到 TUI（crossbeam channel）
+                                if sender.send(out.clone()).is_err() { return Ok(()); }
+                                // 同步发布到 API broadcast channel
+                                if let Some(ref tx) = broadcast { let _ = tx.send(out); }
                             }
                         }
                     }

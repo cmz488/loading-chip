@@ -254,6 +254,7 @@ impl RttMonitorState {
                 let cfg = RttConfig {
                     backend: RttBackend::ProbeRs, chip: self.session.target.clone(),
                     probe: String::new(), telnet_port: 3333, elf_path: Some(self.elf_path.clone()),
+                    broadcast: None,
                 };
                 match ProbeRsRtt::spawn(&cfg, tx) {
                     Ok(c) => { self.rtt_client = Some(Box::new(c)); self.rtt_rx = Some(rx); self.running = true; self.session.push_rtt(RttOutput { channel: 0, text: "📡 RTT 已启动 (probe-rs)".into() }); }
