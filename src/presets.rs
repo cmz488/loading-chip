@@ -50,33 +50,6 @@ pub const TARGETS: &[(&str, &str)] = &[
     ("mspm0g3507", "MSPM0G3507 (Cortex-M0+, 80MHz, TI 混合信号 MCU)"),
 ];
 
-/// 根据 key 查找后端描述
-pub fn backend_label(key: &str) -> &str {
-    BACKENDS
-        .iter()
-        .find(|(k, _)| *k == key)
-        .map(|(_, v)| *v)
-        .unwrap_or(key)
-}
-
-/// 根据 key 查找接口描述
-pub fn iface_label(key: &str) -> &str {
-    INTERFACES
-        .iter()
-        .find(|(k, _)| *k == key)
-        .map(|(_, v)| *v)
-        .unwrap_or(key)
-}
-
-/// 根据 key 查找芯片描述
-pub fn target_label(key: &str) -> &str {
-    TARGETS
-        .iter()
-        .find(|(k, _)| *k == key)
-        .map(|(_, v)| *v)
-        .unwrap_or(key)
-}
-
 /// 获取所有后端 key 列表
 pub fn backend_keys() -> Vec<String> {
     BACKENDS.iter().map(|(k, _)| k.to_string()).collect()
