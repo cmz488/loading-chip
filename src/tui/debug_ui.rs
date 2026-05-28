@@ -422,37 +422,6 @@ fn render_status_bar(f: &mut Frame, area: Rect, _app: &RttMonitorState) {
 // 调试 UI 状态
 // ============================================================================
 
-/// 调试 TUI 的应用状态（区别于烧录 TUI 的 App）
-#[allow(dead_code)]
-pub struct DebugAppState {
-    pub session: DebugSession,
-    pub should_quit: bool,
-    /// 用户正在输入的命令（控制台输入模式）
-    pub input_buffer: String,
-    pub input_mode: bool,
-    /// 添加断点的输入 buffer
-    pub bp_input: String,
-    pub bp_input_mode: bool,
-    /// 添加监视的输入 buffer
-    pub watch_input: String,
-    pub watch_input_mode: bool,
-}
-
-impl DebugAppState {
-    pub fn new(session: DebugSession) -> Self {
-        Self {
-            session,
-            should_quit: false,
-            input_buffer: String::new(),
-            input_mode: false,
-            bp_input: String::new(),
-            bp_input_mode: false,
-            watch_input: String::new(),
-            watch_input_mode: false,
-        }
-    }
-}
-
 // ============================================================================
 // RTT 监视器状态（RTT-only UI）
 // ============================================================================
@@ -658,11 +627,6 @@ impl RttMonitorState {
             channel: 0,
             text: "📡 RTT 已断开".into(),
         });
-    }
-
-    /// 清空 RTT 输出缓冲
-    pub fn clear_output(&mut self) {
-        self.session.rtt_output.clear();
     }
 
     /// 非阻塞轮询 RTT 输出

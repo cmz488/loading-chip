@@ -59,67 +59,6 @@ pub fn probe_rs_chip(target: &str) -> &str {
 }
 
 // ============================================================================
-// GDB 二进制文件映射
-// ============================================================================
-
-/// 芯片 key → 默认 GDB 可执行文件
-/// 不同架构需要不同的 GDB，ARM 用 arm-none-eabi-gdb，Xtensa 用 xtensa-*-elf-gdb
-/// 返回列表，优先级从高到低，前面的找不到时会尝试后面的
-pub fn gdb_binary_candidates(target: &str) -> &[&str] {
-    match target {
-        "stm32f1" | "stm32f4" | "stm32h7" | "stm32g0"
-        | "rp2040" | "nrf52" | "gd32" | "at32" => {
-            &["arm-none-eabi-gdb"]
-        }
-        "esp32" => &["xtensa-esp32-elf-gdb", "arm-none-eabi-gdb"],
-        "esp32s2" => &["xtensa-esp32s2-elf-gdb", "arm-none-eabi-gdb"],
-        "esp32s3" => &["xtensa-esp32s3-elf-gdb", "arm-none-eabi-gdb"],
-        "esp32c3" | "esp32c2" | "esp32c6" | "esp32h2" => {
-            &["riscv32-esp-elf-gdb", "arm-none-eabi-gdb"]
-        }
-        _ => &["arm-none-eabi-gdb"],
-    }
-}
-
-/// 解析实际可用的 GDB 二进制路径
-/// 返回 `(二进制路径, 是否为首选)`，`is_preferred=false` 表示是回退候选
-/// 回退的 GDB（如 arm-none-eabi-gdb 读 Xtensa ELF）会导致符号加载失败
-pub fn resolve_gdb_binary(target: &str) -> Option<(String, bool)> {
-    let candidates = gdb_binary_candidates(target);
-    for (i, candidate) in candidates.iter().enumerate() {
-        let is_preferred = i == 0;
-        // 1. 检查 PATH
-        for dir in std::env::var_os("PATH")
-            .unwrap_or_default()
-            .to_str()
-            .unwrap_or("")
-            .split(':') {
-            let path = format!("{}/{}", dir, candidate);
-            if std::path::Path::new(&path).is_file() {
-                return Some((path, is_preferred));
-            }
-        }
-        // 2. 检查 ~/.cargo/bin/
-        if let Some(home) = std::env::var_os("HOME") {
-            let path = format!("{}/.cargo/bin/{}", home.to_string_lossy(), candidate);
-            if std::path::Path::new(&path).is_file() {
-                return Some((path, is_preferred));
-            }
-        }
-        // 3. which 命令
-        if let Ok(out) = std::process::Command::new("which").arg(candidate).output() {
-            if out.status.success() {
-                let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !path.is_empty() {
-                    return Some((path, is_preferred));
-                }
-            }
-        }
-    }
-    None
-}
-
-// ============================================================================
 // pyOCD 映射
 // ============================================================================
 

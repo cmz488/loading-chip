@@ -7,12 +7,6 @@
 pub struct DetectedChip {
     /// 探针名称（如 "STLink V2"）
     pub probe_name: String,
-    /// USB vendor ID
-    pub vendor_id: u16,
-    /// USB product ID
-    pub product_id: u16,
-    /// 探针序列号
-    pub serial: Option<String>,
     /// probe-rs 返回的芯片名（如 "STM32F407VG"）
     pub chip_name: String,
     /// 对应的 boards.yaml board ID（如果找到映射）
@@ -47,10 +41,6 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
         .into_iter()
         .filter_map(|probe| {
             let probe_name = probe.identifier.clone();
-            let vendor_id = probe.vendor_id;
-            let product_id = probe.product_id;
-            let serial = probe.serial_number.clone();
-
             // 推导接口类型
             let suggested_interface = match probe_name.to_lowercase() {
                 s if s.contains("stlink") => "stlink".to_string(),
@@ -83,9 +73,6 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
 
             Some(DetectedChip {
                 probe_name,
-                vendor_id,
-                product_id,
-                serial,
                 chip_name,
                 board_id: None, // caller fills via BoardRegistry
                 suggested_interface,
