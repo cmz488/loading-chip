@@ -105,18 +105,18 @@ fn handle_normal(app: &mut App, code: KeyCode) -> bool {
                 true
             }
             Focus::ElfPath => {
-                // 先搜索当前目录的 .elf 文件
+                // 先搜索当前目录的 固件文件
                 app.search_elf_files();
                 if app.elf_files.is_empty() {
                     // 未找到 > 回退到手动输入
                     app.mode = InputMode::EditingElf;
-                    app.status = "未找到 .elf 文件，请手动输入路径".to_string();
+                    app.status = "未找到 固件文件，请手动输入路径".to_string();
                 } else {
                     // 找到文件 > 弹出选择列表
                     app.mode = InputMode::SelectingElf;
                     app.list_state.select(Some(0));
                     app.status = format!(
-                        "找到 {} 个 .elf 文件，↑↓ 选择，Enter 确认，e 手动输入",
+                        "找到 {} 个 固件文件，↑↓ 选择，Enter 确认，e 手动输入",
                         app.elf_files.len()
                     );
                 }
@@ -124,7 +124,7 @@ fn handle_normal(app: &mut App, code: KeyCode) -> bool {
             }
             Focus::FlashBtn => {
                 if app.elf_path.is_empty() {
-                    app.status = "⚠️  请先填写 ELF 文件路径！".to_string();
+                    app.status = "⚠️  请先填写 固件文件路径！".to_string();
                     true
                 } else {
                     app.status = "正在启动烧录...".to_string();
@@ -177,9 +177,9 @@ fn handle_editing_elf(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Enter => {
             app.mode = InputMode::Normal;
             if app.elf_path.is_empty() {
-                app.status = "⚠️  ELF 路径为空，请重新填写".to_string();
+                app.status = "⚠️  固件路径为空，请重新填写".to_string();
             } else {
-                app.status = format!("ELF 路径: {}", app.elf_path);
+                app.status = format!("固件路径: {}", app.elf_path);
             }
             true
         }
@@ -192,13 +192,13 @@ fn handle_editing_elf(app: &mut App, code: KeyCode) -> bool {
         KeyCode::Tab => {
             app.mode = InputMode::Normal;
             app.focus = Focus::FlashBtn;
-            app.status = format!("ELF 路径: {}", app.elf_path);
+            app.status = format!("固件路径: {}", app.elf_path);
             true
         }
         KeyCode::BackTab => {
             app.mode = InputMode::Normal;
             app.focus = Focus::Target;
-            app.status = format!("ELF 路径: {}", app.elf_path);
+            app.status = format!("固件路径: {}", app.elf_path);
             true
         }
         KeyCode::Backspace => {
@@ -243,12 +243,12 @@ fn handle_selecting_elf(app: &mut App, code: KeyCode) -> bool {
         // e / Tab：切换到手动输入模式
         KeyCode::Char('e') | KeyCode::Tab => {
             app.mode = InputMode::EditingElf;
-            app.status = "手动输入 ELF 文件路径".to_string();
+            app.status = "手动输入 固件文件路径".to_string();
             true
         }
         KeyCode::Esc => {
             app.mode = InputMode::Normal;
-            app.status = "已取消 ELF 文件选择".to_string();
+            app.status = "已取消 固件文件选择".to_string();
             true
         }
         _ => true,

@@ -162,7 +162,7 @@ fn render_mode_switch(f: &mut Frame, area: Rect, app: &App) {
 // ============================================================================
 
 fn render_form(f: &mut Frame, area: Rect, app: &App) {
-    // ELF 编辑模式下给输入框更多空间
+    // 固件路径编辑模式下给输入框更多空间
     let elf_height = if app.mode == InputMode::EditingElf {
         5
     } else {
@@ -178,7 +178,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(1),          // 间距
             Constraint::Length(3),          // 芯片
             Constraint::Length(1),          // 间距
-            Constraint::Length(elf_height), // ELF 路径
+            Constraint::Length(elf_height), // 固件路径
             Constraint::Length(1),          // 间距
             Constraint::Length(3),          // 烧录按钮
         ])
@@ -214,7 +214,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         app.mode == InputMode::Selecting && app.focus == Focus::Target,
     );
 
-    // ELF 路径字段 — 根据不同模式渲染
+    // 固件路径字段 — 根据不同模式渲染
     if app.mode == InputMode::EditingElf {
         render_elf_input(f, form_chunks[6], app);
     } else if app.mode == InputMode::SelectingElf {
@@ -227,7 +227,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         render_field(
             f,
             form_chunks[6],
-            "📁 ELF 文件（从搜索结果选择）",
+            "📁 固件文件（从搜索结果选择）",
             preview,
             true,
             true,
@@ -241,7 +241,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         render_field(
             f,
             form_chunks[6],
-            "📁 ELF 文件",
+            "📁 固件文件",
             elf_display,
             app.focus == Focus::ElfPath,
             false,
@@ -288,7 +288,7 @@ fn render_field(f: &mut Frame, area: Rect, label: &str, value: &str, focused: bo
     f.render_widget(Paragraph::new(text).block(block), area);
 }
 
-/// 渲染 ELF 路径编辑输入框（带高亮光标和提示）
+/// 渲染 固件路径编辑输入框（带高亮光标和提示）
 fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
     // 输入框使用醒目的绿色/亮色边框
     let border_style = Style::default().fg(SUCCESS).bold();
@@ -297,7 +297,7 @@ fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
     let display_text = if app.elf_path.is_empty() {
         // 空输入时显示占位提示
         Span::styled(
-            "📝 在此输入 ELF 文件路径... ｜",
+            "📝 在此输入 固件文件路径... ｜",
             Style::default().fg(TEXT_DIM),
         )
     } else {
@@ -310,7 +310,7 @@ fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
 
     let text = Text::from(vec![
         Line::from(Span::styled(
-            "📁 ELF 文件",
+            "📁 固件文件",
             Style::default().fg(TEXT).bold(),
         )),
         Line::from(""),
@@ -430,7 +430,7 @@ fn render_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
     f.render_stateful_widget(list_widget, popup_area, &mut list_state);
 }
 
-/// 渲染 ELF 文件搜索下拉选择
+/// 渲染 固件文件搜索下拉选择
 fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
     if app.elf_files.is_empty() {
         return;
@@ -478,7 +478,7 @@ fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
                     .border_type(ratatui::widgets::BorderType::Rounded)
                 .border_style(Style::default().fg(SUCCESS))
                 .title(
-                    Line::from(" 📁 找到的 ELF 文件 ")
+                    Line::from(" 📁 找到的 固件文件 ")
                         .style(Style::default().fg(SUCCESS).bold()),
                 ),
         )

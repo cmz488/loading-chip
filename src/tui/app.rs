@@ -258,30 +258,36 @@ impl App {
             self.elf_path = path.clone();
         }
         self.mode = InputMode::Normal;
-        self.status = format!("ELF 路径: {}", self.elf_path);
+        self.status = format!("固件: {}", self.elf_path);
     }
 
-    /// 搜索当前目录及子目录中的 .elf 文件
+    /// 固件文件扩展名（覆盖常见嵌入式工具链输出）
+    /// .elf  — GCC / PlatformIO / CMake / ESP-IDF
+    /// .out  — TI CCS (COFF/ELF)
+    /// .bin  — 原始二进制
+    /// .hex  — Intel HEX
+    /// .axf  — Keil MDK
+    /// .ihx  — Intel HEX (SDCC)
+    const FIRMWARE_EXTS: &[&str] = &[".elf", ".out", ".bin", ".hex", ".axf", ".ihx"];
+
+    /// 搜索当前目录及子目录中的固件文件 (.elf/.out/.bin/.hex/.axf/.ihx)
     /// 若找到则填充 self.elf_files 列表（按路径长度排序）
-    /// 支持 PlatformIO（.pio/build/...）、CMake、ESP-IDF 等常见构建目录
+    /// 支持 PlatformIO、CMake、ESP-IDF、TI CCS 等常见构建目录
     pub fn search_elf_files(&mut self) {
         self.elf_files.clear();
         self.elf_file_idx = 0;
 
         // 从当前工作目录搜索，最大深度 5 层
-        // PlatformIO 路径: .pio/build/<env>/firmware.elf 需要 3 层
-        // ESP-IDF: build/<project>.elf 需要 2 层
-        // 再给一些嵌套项目余量
         if let Ok(cwd) = std::env::current_dir() {
-            self.scan_for_elf(&cwd, 0, 5);
+            self.scan_for_firmware(&cwd, 0, 5);
         }
 
         // 短路径优先显示
         self.elf_files.sort_by_key(|p| p.len());
     }
 
-    /// 递归扫描目录中的 .elf 文件
-    fn scan_for_elf(&mut self, dir: &std::path::Path, depth: usize, max_depth: usize) {
+    /// 递归扫描目录中的固件文件
+    fn scan_for_firmware(&mut self, dir: &std::path::Path, depth: usize, max_depth: usize) {
         if depth > max_depth {
             return;
         }
@@ -290,12 +296,14 @@ impl App {
                 let path = entry.path();
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if path.is_dir() {
-                    // 只跳过确定不含 .elf 的巨型目录
-                    if name == "node_modules" || name == ".git" {
+                    // 跳过不含固件文件的巨型目录
+                    if name == "node_modules" || name == ".git" || name == "target" {
                         continue;
                     }
-                    self.scan_for_elf(&path, depth + 1, max_depth);
-                } else if path.is_file() && name.ends_with(".elf") {
+                    self.scan_for_firmware(&path, depth + 1, max_depth);
+                } else if path.is_file()
+                    && Self::FIRMWARE_EXTS.iter().any(|ext| name.ends_with(ext))
+                {
                     if let Ok(abs) = path.canonicalize() {
                         self.elf_files.push(abs.to_string_lossy().to_string());
                     }
