@@ -2,7 +2,7 @@
 name = "loading-chip"
 version = "0.2.0"
 edition = "2024"
-description = "嵌入式芯片烧录/调试 TUI 工具 — 烧录 + dap-ui 风格调试"
+description = "嵌入式芯片烧录/调试 TUI 工具 — 支持 probe-rs / OpenOCD / pyOCD / GDB"
 license = "MIT"
 
 [[bin]]
