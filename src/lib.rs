@@ -28,6 +28,7 @@ mod api;
 mod app;
 mod backend;
 mod board;
+mod chip_detect;
 mod cli;
 mod config;
 mod debug;
