@@ -48,6 +48,8 @@ pub struct RttConfig {
     pub probe: String,
     /// OpenOCD telnet 端口
     pub telnet_port: u16,
+    /// ELF 文件路径，用于从符号表查找 _SEGGER_RTT 地址
+    pub elf_path: Option<String>,
 }
 
 /// RTT 后端
@@ -86,6 +88,21 @@ impl ProbeRsRtt {
     pub fn spawn(config: &RttConfig, sender: Sender<RttOutput>) -> std::io::Result<Self> {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = Arc::clone(&running);
+
+        // 尝试 ELF 符号查找 — 优先定位 _SEGGER_RTT 地址
+        if let Some(ref elf_path) = config.elf_path {
+            if let Some(addr) = find_rtt_symbol_in_elf(elf_path) {
+                let _ = sender.send(RttOutput {
+                    channel: 0,
+                    text: format!("📍 在 ELF 中找到 _SEGGER_RTT @ 0x{:08X}", addr),
+                });
+            } else {
+                let _ = sender.send(RttOutput {
+                    channel: 1,
+                    text: "⚠️ ELF 中未找到 _SEGGER_RTT 符号，将使用内存扫描...".into(),
+                });
+            }
+        }
 
         let mut cmd = Command::new("probe-rs");
         cmd.arg("rtt");
@@ -279,6 +296,35 @@ impl RttChannel {
         }
         outputs
     }
+}
+
+// ============================================================================
+// ELF 符号查找
+// ============================================================================
+
+/// 从 ELF 文件中查找 _SEGGER_RTT 符号地址
+///
+/// 使用 `object` crate 解析 ELF 符号表。
+#[cfg(feature = "debug")]
+fn find_rtt_symbol_in_elf(elf_path: &str) -> Option<u64> {
+    use object::{Object, ObjectSymbol};
+
+    let data = std::fs::read(elf_path).ok()?;
+    let obj = object::File::parse(&*data).ok()?;
+    for sym in obj.symbols() {
+        if let Ok(name) = sym.name() {
+            if name == "_SEGGER_RTT" {
+                return Some(sym.address());
+            }
+        }
+    }
+    None
+}
+
+/// 无 debug feature 时的存根
+#[cfg(not(feature = "debug"))]
+fn find_rtt_symbol_in_elf(_elf_path: &str) -> Option<u64> {
+    None
 }
 
 // ============================================================================
