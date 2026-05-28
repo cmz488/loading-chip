@@ -203,15 +203,27 @@ fn probe_rs_rtt_loop(
         text: format!("✅ RTT 就绪 ({} 通道)", rtt.up_channels().len()),
     });
 
+    // 每个通道的行缓冲：累积不完整行数据，按 '\n' 拆分为完整行输出
+    let num_channels = rtt.up_channels().len();
+    let mut line_bufs: Vec<String> = vec![String::new(); num_channels];
     let mut buf = vec![0u8; 4096];
+
     while running.load(Ordering::SeqCst) {
-        for i in 0..rtt.up_channels().len() {
+        for i in 0..num_channels {
             if let Some(ch) = rtt.up_channel(i) {
                 match ch.read(&mut core, &mut buf) {
                     Ok(count) if count > 0 => {
-                        let text = String::from_utf8_lossy(&buf[..count]).to_string();
-                        if sender.send(RttOutput { channel: i as u8, text }).is_err() {
-                            return Ok(());
+                        line_bufs[i].push_str(&String::from_utf8_lossy(&buf[..count]));
+                        // 按换行符拆分为完整行
+                        while let Some(nl) = line_bufs[i].find('\n') {
+                            let line = line_bufs[i][..nl].trim_end_matches('\r').to_string();
+                            line_bufs[i].drain(..=nl);
+                            // 跳过空行，只发送有内容的行
+                            if !line.is_empty()
+                                && sender.send(RttOutput { channel: i as u8, text: line }).is_err()
+                            {
+                                return Ok(());
+                            }
                         }
                     }
                     _ => {}
@@ -219,6 +231,13 @@ fn probe_rs_rtt_loop(
             }
         }
         thread::sleep(Duration::from_millis(50));
+    }
+
+    // 退出前 flush 各通道缓冲中的残余数据
+    for (i, buf) in line_bufs.iter().enumerate() {
+        if !buf.is_empty() {
+            let _ = sender.send(RttOutput { channel: i as u8, text: buf.clone() });
+        }
     }
 
     Ok(())
