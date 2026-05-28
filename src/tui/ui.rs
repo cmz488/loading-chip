@@ -146,7 +146,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         f,
         form_chunks[0],
         "⚙️  烧录后端",
-        app.backend_label(),
+        &app.backend,
         app.focus == Focus::Backend,
         app.mode == InputMode::Selecting && app.focus == Focus::Backend,
     );
@@ -156,7 +156,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         f,
         form_chunks[2],
         "🔌 调试接口",
-        app.iface_label(),
+        &app.interface,
         app.focus == Focus::Interface,
         app.mode == InputMode::Selecting && app.focus == Focus::Interface,
     );
@@ -166,7 +166,7 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
         f,
         form_chunks[4],
         "🎯 目标芯片",
-        app.target_label(),
+        &app.target,
         app.focus == Focus::Target,
         app.mode == InputMode::Selecting && app.focus == Focus::Target,
     );
