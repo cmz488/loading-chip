@@ -53,7 +53,7 @@ pub enum Commands {
         #[arg(long, default_value = "60", value_name = "秒")]
         timeout: u64,
 
-        /// 启动 API 服务（Unix socket），供外部程序调用
+        /// 启动 REST API + WebSocket 服务（可与 TUI 同时使用）
         #[arg(long)]
         api: bool,
 

@@ -22,6 +22,9 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<(), String> {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // 设置全局 RTT broadcast
+    crate::debug::rtt::set_global_broadcast(state.rtt_tx.clone());
+
     let app = routes::api_router()
         .layer(cors)
         .with_state(state);
@@ -68,6 +71,9 @@ pub fn spawn_server(
 
             let actual = listener.local_addr().unwrap_or_else(|_| addr.parse().unwrap());
             eprintln!("🔌 API 服务已启动: http://{}", actual);
+
+            // 设置全局 RTT broadcast — TUI 和 API 共享同一通道
+            crate::debug::rtt::set_global_broadcast(state.rtt_tx.clone());
 
             axum::serve(listener, app)
                 .with_graceful_shutdown(async {

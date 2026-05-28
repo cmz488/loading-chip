@@ -9,11 +9,20 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
+
+/// 全局 RTT broadcast — TUI 和 API 共享
+/// API 服务启动时设置，TUI RTT 循环自动向此通道发布数据
+static GLOBAL_BROADCAST: OnceLock<tokio::sync::broadcast::Sender<RttOutput>> = OnceLock::new();
+
+/// 设置全局 RTT broadcast 发送端（由 API server 调用）
+pub fn set_global_broadcast(tx: tokio::sync::broadcast::Sender<RttOutput>) {
+    let _ = GLOBAL_BROADCAST.set(tx);
+}
 
 /// RTT 输出记录
 #[derive(Debug, Clone)]
@@ -259,8 +268,12 @@ fn probe_rs_rtt_loop(
                                 let out = RttOutput { channel: i as u8, text: line };
                                 // 发送到 TUI（crossbeam channel）
                                 if sender.send(out.clone()).is_err() { return Ok(()); }
-                                // 同步发布到 API broadcast channel
-                                if let Some(ref tx) = broadcast { let _ = tx.send(out); }
+                                // 发布到 API broadcast（优先 config 传入，回退到全局）
+                                if let Some(ref tx) = broadcast {
+                                    let _ = tx.send(out.clone());
+                                } else if let Some(tx) = GLOBAL_BROADCAST.get() {
+                                    let _ = tx.send(out);
+                                }
                             }
                         }
                     }
