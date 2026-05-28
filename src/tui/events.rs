@@ -20,6 +20,31 @@ pub fn handle_key(app: &mut App, code: KeyCode) -> bool {
         return true;
     }
 
+    // F12: 重新检测芯片
+    if let KeyCode::F(12) = code {
+        app.detected_chips = crate::chip_detect::detect_chips();
+        if let Some(detected) = app.detected_chips.first() {
+            let board_id = detected.board_id.clone()
+                .unwrap_or_else(|| detected.chip_name.clone());
+            if app.registry.resolve(&board_id, "probe-rs").is_ok() {
+                app.target = board_id;
+            } else {
+                app.target = detected.chip_name.clone();
+            }
+            app.interface = detected.suggested_interface.clone();
+            if let Some(idx) = crate::presets::iface_keys()
+                .iter().position(|k| *k == detected.suggested_interface) {
+                app.iface_idx = idx;
+            }
+            app.status = format!(
+                "已检测到: {} (芯片: {})", detected.probe_name, detected.chip_name
+            );
+        } else {
+            app.status = "未检测到调试探针".to_string();
+        }
+        return true;
+    }
+
     match app.mode {
         InputMode::Normal => handle_normal(app, code),
         InputMode::Selecting => handle_selecting(app, code),
