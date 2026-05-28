@@ -1,7 +1,7 @@
 //! OpenOCD 烧录后端
 //!
 //! 直接调用 OpenOCD 完成固件烧录，无需外部 GDB Server。
-//! ESP32 系列使用板级配置，其他芯片使用 interface + target 分离模式。
+//! 所有芯片统一使用 interface + target 分离模式（兼容主线 OpenOCD 和 Espressif 分支）。
 
 use crate::backend::mappings;
 use crate::backend::Backend;
@@ -21,21 +21,15 @@ impl Backend for OpenOcdBackend {
     }
 
     fn build_args(&self, config: &FlashConfig) -> Vec<String> {
-        let is_esp = config.target.starts_with("esp");
-        let mut args = Vec::with_capacity(if is_esp { 6 } else { 12 });
+        let mut args = vec![
+            "-f".to_string(),
+            mappings::openocd_interface_cfg(&config.interface).into(),
+            "-f".to_string(),
+            mappings::openocd_target_cfg(&config.target).into(),
+        ];
 
-        if is_esp {
-            args.push("-f".into());
-            args.push(mappings::openocd_target_cfg(&config.target).into());
-        } else {
-            args.push("-f".into());
-            args.push(mappings::openocd_interface_cfg(&config.interface).into());
-            args.push("-f".into());
-            args.push(mappings::openocd_target_cfg(&config.target).into());
-
-            // 自动选择传输协议
-            // "swd" 和 "jtag" 是协议名（映射到默认探针），其余为具体探针型号
-            // is_swd_probe / is_jtag_probe 统一处理两类情况
+        // 自动选择传输协议 — 仅非 ESP 芯片需要（ESP target 配置自带传输选择）
+        if !config.target.starts_with("esp") {
             let iface = &config.interface;
             if crate::backend::mappings::is_swd_probe(iface) {
                 args.push("-c".into());
@@ -76,6 +70,21 @@ mod tests {
         }
     }
 
+    fn esp_cfg() -> FlashConfig {
+        FlashConfig {
+            backend: crate::FlashBackend::OpenOcd,
+            interface: "usb-jtag".into(),
+            target: "esp32s3".into(),
+            elf_path: "a.elf".into(),
+            gdb_port: String::new(),
+            pyocd_path: String::new(),
+            timeout_secs: 0,
+            board_config: String::new(),
+            board_extra_args: vec![],
+            board_id: String::new(),
+        }
+    }
+
     #[test]
     fn args_swd() {
         let args = OpenOcdBackend.build_args(&cfg());
@@ -88,12 +97,13 @@ mod tests {
     }
 
     #[test]
-    fn args_esp32_no_interface() {
-        let mut c = cfg();
-        c.target = "esp32s3".into();
-        let args = OpenOcdBackend.build_args(&c);
-        assert!(!args.iter().any(|s| s.starts_with("interface/")));
-        assert!(args.iter().any(|s| s == "board/esp32s3-builtin.cfg"));
+    fn args_esp32_uses_interface_and_target() {
+        let args = OpenOcdBackend.build_args(&esp_cfg());
+        // ESP32 现在也使用 interface + target，不再依赖 board/xxx.cfg
+        assert!(args.iter().any(|s| s == "interface/esp_usb_jtag.cfg"));
+        assert!(args.iter().any(|s| s == "target/esp32s3.cfg"));
+        // ESP 芯片不添加 transport select
+        assert!(!args.iter().any(|s| s.contains("transport select")));
         assert!(args
             .iter()
             .any(|s| s.contains("program a.elf verify reset exit")));

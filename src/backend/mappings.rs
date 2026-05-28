@@ -15,6 +15,7 @@ pub fn openocd_interface_cfg(interface: &str) -> &'static str {
         "swd" => "interface/cmsis-dap.cfg",
         "jtag" => "interface/jlink.cfg",
         "xds110" => "interface/xds110.cfg",
+        "esp_usb_jtag" | "usb-jtag" => "interface/esp_usb_jtag.cfg",
         _ => "interface/cmsis-dap.cfg",
     }
 }
@@ -26,9 +27,9 @@ pub fn openocd_target_cfg(target: &str) -> &'static str {
         "stm32f4" => "target/stm32f4x.cfg",
         "stm32h7" => "target/stm32h7x.cfg",
         "stm32g0" => "target/stm32g0x.cfg",
-        "esp32" => "board/esp32-wrover-kit-3.3v.cfg",
-        "esp32s3" => "board/esp32s3-builtin.cfg",
-        "esp32c3" => "board/esp32c3-builtin.cfg",
+        "esp32" => "target/esp32.cfg",
+        "esp32s3" => "target/esp32s3.cfg",
+        "esp32c3" => "target/esp32c3.cfg",
         "rp2040" => "target/rp2040.cfg",
         "nrf52" => "target/nrf52840.cfg",
         "gd32" => "target/stm32f1x.cfg",
@@ -171,7 +172,7 @@ mod tests {
         );
         assert_eq!(openocd_target_cfg("stm32f4"), "target/stm32f4x.cfg");
         assert_eq!(openocd_target_cfg("rp2040"), "target/rp2040.cfg");
-        assert_eq!(openocd_target_cfg("esp32s3"), "board/esp32s3-builtin.cfg");
+        assert_eq!(openocd_target_cfg("esp32s3"), "target/esp32s3.cfg");
     }
 
     #[test]

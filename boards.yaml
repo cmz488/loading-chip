@@ -65,10 +65,10 @@ boards:
     name: "ESP32"
     manufacturer: "Espressif"
     architecture: xtensa
-    interfaces: [usb-uart, jtag]
+    interfaces: [jtag, ft2232]
     backends:
       probe-rs: { target: "ESP32" }
-      openocd: { target: "esp32", config: "board/esp32-wrover-kit-3.3v.cfg" }
+      openocd: { target: "esp32", config: "target/esp32.cfg" }
       # gdb: Xtensa GDB（需 xtensa-esp32-elf-gdb）
       # pyocd: 不支持 Xtensa 架构
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
@@ -82,7 +82,7 @@ boards:
     interfaces: [usb-jtag, jtag]
     backends:
       probe-rs: { target: "ESP32S3" }
-      openocd: { target: "esp32s3", config: "board/esp32s3-builtin.cfg" }
+      openocd: { target: "esp32s3", config: "target/esp32s3.cfg" }
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
     detection:
       probe_rs_chips: ["ESP32S3", "ESP32-S3"]
@@ -94,7 +94,7 @@ boards:
     interfaces: [usb-jtag, jtag]
     backends:
       probe-rs: { target: "ESP32C3" }
-      openocd: { target: "esp32c3", config: "board/esp32c3-builtin.cfg" }
+      openocd: { target: "esp32c3", config: "target/esp32c3.cfg" }
     note: "pyOCD 不支持 ESP32（仅 ARM），推荐使用 probe-rs"
     detection:
       probe_rs_chips: ["ESP32C3", "ESP32-C3"]
