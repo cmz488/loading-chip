@@ -141,7 +141,7 @@ fn run_flash_tui_inner(
                     // handle_key 返回 false → 执行烧录
                     // 先渲染一帧"烧录中"界面，避免看起来像卡死
                     app.mode = app::InputMode::Flashing;
-                    app.status = format!("正在启动 {} ...", app.backend_label());
+                    app.status = format!("正在启动 {} ...", app.backend);
                     terminal.draw(|f| ui(f, app))?;
 
                     // 执行烧录（阻塞，大固件可能需要几十秒）
