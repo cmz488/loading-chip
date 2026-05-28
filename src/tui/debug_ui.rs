@@ -24,10 +24,18 @@ use ratatui::{
     Frame,
 };
 
+use std::process::{Child, Command, Stdio};
+
+use crossbeam_channel::Receiver;
+
+use crate::debug::rtt::{
+    RttBackend, RttClient, RttConfig, RttOutput, ProbeRsRtt,
+    spawn_openocd_rtt, spawn_pyocd_rtt,
+};
 use crate::debug::session::DebugSession;
 
 /// 调试 UI 渲染入口
-pub fn render(f: &mut Frame, app: &DebugAppState, area: Rect) {
+pub fn render(f: &mut Frame, app: &RttMonitorState, area: Rect) {
     // 布局：工具栏 + 主区域（左右分栏）+ 状态栏
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -47,7 +55,7 @@ pub fn render(f: &mut Frame, app: &DebugAppState, area: Rect) {
 // 工具栏
 // ============================================================================
 
-fn render_toolbar(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_toolbar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let mut spans = vec![
         Span::styled("🔥 DEBUG  ", Style::default().fg(Color::Yellow).bold()),
         Span::styled(
@@ -95,7 +103,7 @@ fn render_toolbar(f: &mut Frame, area: Rect, app: &DebugAppState) {
 // 主体布局
 // ============================================================================
 
-fn render_main(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_main(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -110,7 +118,7 @@ fn render_main(f: &mut Frame, area: Rect, app: &DebugAppState) {
 
 // ---- 左栏：断点 + 调用栈 + 监视 ----
 
-fn render_left_panel(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_left_panel(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -125,7 +133,7 @@ fn render_left_panel(f: &mut Frame, area: Rect, app: &DebugAppState) {
     render_watches(f, chunks[2], app);
 }
 
-fn render_breakpoints(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_breakpoints(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let items: Vec<ListItem> = if app.session.breakpoints.is_empty() {
         vec![ListItem::new(
             Span::styled("  无断点 · Ctrl+B 添加", Style::default().fg(Color::DarkGray)),
@@ -160,7 +168,7 @@ fn render_breakpoints(f: &mut Frame, area: Rect, app: &DebugAppState) {
     f.render_widget(list, area);
 }
 
-fn render_call_stack(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_call_stack(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let items: Vec<ListItem> = if app.session.frames.is_empty() {
         vec![ListItem::new(
             Span::styled("  (等待停止...)", Style::default().fg(Color::DarkGray)),
@@ -199,7 +207,7 @@ fn render_call_stack(f: &mut Frame, area: Rect, app: &DebugAppState) {
     f.render_widget(list, area);
 }
 
-fn render_watches(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_watches(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let items: Vec<ListItem> = app
         .session
         .watches
@@ -229,7 +237,7 @@ fn render_watches(f: &mut Frame, area: Rect, app: &DebugAppState) {
 
 // ---- 右栏：变量 + 控制台 ----
 
-fn render_right_panel(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_right_panel(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -244,7 +252,7 @@ fn render_right_panel(f: &mut Frame, area: Rect, app: &DebugAppState) {
     render_console(f, chunks[2], app);
 }
 
-fn render_variables(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_variables(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let items: Vec<ListItem> = if app.session.variables.is_empty() {
         vec![ListItem::new(
             Span::styled("  (停止执行后显示变量)", Style::default().fg(Color::DarkGray)),
@@ -274,7 +282,7 @@ fn render_variables(f: &mut Frame, area: Rect, app: &DebugAppState) {
 
 
 /// 渲染 RTT 实时输出面板
-fn render_rtt_console(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_rtt_console(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let title = if app.session.rtt_enabled {
         " 📡 RTT 实时输出 "
     } else {
@@ -322,7 +330,7 @@ fn render_rtt_console(f: &mut Frame, area: Rect, app: &DebugAppState) {
         area,
     );
 }
-fn render_console(f: &mut Frame, area: Rect, app: &DebugAppState) {
+fn render_console(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let mut text_lines: Vec<Line> = app
         .session
         .console
@@ -372,7 +380,7 @@ fn render_console(f: &mut Frame, area: Rect, app: &DebugAppState) {
 // 状态栏
 // ============================================================================
 
-fn render_status_bar(f: &mut Frame, area: Rect, _app: &DebugAppState) {
+fn render_status_bar(f: &mut Frame, area: Rect, _app: &RttMonitorState) {
     let shortcuts = [
         ("F5", "继续"),
         ("F6", "步过"),
@@ -442,5 +450,239 @@ impl DebugAppState {
             watch_input: String::new(),
             watch_input_mode: false,
         }
+    }
+}
+
+// ============================================================================
+// RTT 监视器状态（RTT-only UI）
+// ============================================================================
+
+/// RTT 监视器状态 — 仅 RTT 输出的精简调试 UI
+pub struct RttMonitorState {
+    pub session: DebugSession,
+    pub should_quit: bool,
+    pub rtt_client: Option<Box<dyn RttClient>>,
+    pub rtt_rx: Option<Receiver<RttOutput>>,
+    pub running: bool,
+    pub backend: String,
+    pub elf_path: String,
+    pub server_process: Option<Child>,
+    pub gdb_port: u16,
+    pub pyocd_path: String,
+    pub interface: String,
+}
+
+impl RttMonitorState {
+    pub fn new(
+        target: String,
+        backend: String,
+        elf_path: String,
+        interface: String,
+        port: u16,
+        pyocd_path: String,
+    ) -> Self {
+        Self {
+            session: DebugSession::new(target.clone(), backend.clone()),
+            should_quit: false,
+            rtt_client: None,
+            rtt_rx: None,
+            running: false,
+            backend,
+            elf_path,
+            server_process: None,
+            gdb_port: port,
+            pyocd_path,
+            interface,
+        }
+    }
+
+    pub fn start_rtt(&mut self) {
+        if self.running {
+            return;
+        }
+
+        let (tx, rx) = crossbeam_channel::unbounded();
+
+        match self.backend.as_str() {
+            "openocd" => {
+                let interface_cfg = crate::backend::mappings::openocd_interface_cfg(&self.interface);
+                let target_cfg = crate::backend::mappings::openocd_target_cfg(&self.session.target);
+                let gdb_port_str = self.gdb_port.to_string();
+
+                match Command::new("openocd")
+                    .args(["-f", interface_cfg, "-f", target_cfg,
+                           "-c", &format!("gdb_port {}", gdb_port_str)])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                {
+                    Ok(child) => {
+                        self.server_process = Some(child);
+                        self.session.push_rtt(RttOutput {
+                            channel: 0,
+                            text: "🟢 OpenOCD GDB Server 已启动".into(),
+                        });
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    Err(e) => {
+                        self.session.push_rtt(RttOutput {
+                            channel: 1,
+                            text: format!("❌ 无法启动 OpenOCD: {}", e),
+                        });
+                        return;
+                    }
+                }
+
+                match spawn_openocd_rtt(4444, tx) {
+                    Ok(client) => {
+                        self.rtt_client = Some(Box::new(client));
+                        self.rtt_rx = Some(rx);
+                        self.running = true;
+                        self.session.push_rtt(RttOutput {
+                            channel: 0,
+                            text: "📡 RTT 已启动 (OpenOCD telnet)".into(),
+                        });
+                    }
+                    Err(e) => {
+                        self.session.push_rtt(RttOutput {
+                            channel: 1,
+                            text: format!("❌ RTT 连接失败: {}", e),
+                        });
+                    }
+                }
+            }
+
+            "pyocd" => {
+                let target = crate::backend::mappings::pyocd_target(&self.session.target);
+                let pyocd_bin = if self.pyocd_path.is_empty() {
+                    "pyocd".to_string()
+                } else {
+                    self.pyocd_path.clone()
+                };
+
+                match Command::new(&pyocd_bin)
+                    .args(["gdbserver", "--target", target,
+                           "--port", &self.gdb_port.to_string(),
+                           "--telnet-port", "4444"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                {
+                    Ok(child) => {
+                        self.server_process = Some(child);
+                        self.session.push_rtt(RttOutput {
+                            channel: 0,
+                            text: format!("🟢 pyOCD GDB Server 已启动 (端口 {})", self.gdb_port),
+                        });
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                    Err(e) => {
+                        self.session.push_rtt(RttOutput {
+                            channel: 1,
+                            text: format!("❌ 无法启动 pyOCD: {}", e),
+                        });
+                        return;
+                    }
+                }
+
+                match spawn_pyocd_rtt(4444, tx) {
+                    Ok(client) => {
+                        self.rtt_client = Some(Box::new(client));
+                        self.rtt_rx = Some(rx);
+                        self.running = true;
+                        self.session.push_rtt(RttOutput {
+                            channel: 0,
+                            text: "📡 RTT 已启动 (pyOCD telnet)".into(),
+                        });
+                    }
+                    Err(e) => {
+                        self.session.push_rtt(RttOutput {
+                            channel: 1,
+                            text: format!("❌ RTT 连接失败: {}", e),
+                        });
+                    }
+                }
+            }
+
+            "gdb" => {
+                self.running = false;
+                self.session.push_rtt(RttOutput {
+                    channel: 1,
+                    text: "⚠️ GDB 模式下 RTT 不可用，请使用 GDB 控制台手动连接".into(),
+                });
+            }
+
+            _ => {
+                // probe-rs (default) — uses CLI-based probe-rs rtt
+                let rtt_config = RttConfig {
+                    backend: RttBackend::ProbeRs,
+                    chip: self.session.target.clone(),
+                    probe: String::new(),
+                    telnet_port: 3333,
+                    elf_path: Some(self.elf_path.clone()),
+                };
+                match ProbeRsRtt::spawn(&rtt_config, tx) {
+                    Ok(client) => {
+                        self.rtt_client = Some(Box::new(client));
+                        self.rtt_rx = Some(rx);
+                        self.running = true;
+                        self.session.push_rtt(RttOutput {
+                            channel: 0,
+                            text: "📡 RTT 已启动 (probe-rs)".into(),
+                        });
+                    }
+                    Err(e) => {
+                        self.session.push_rtt(RttOutput {
+                            channel: 1,
+                            text: format!("❌ RTT 启动失败: {}", e),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn stop_rtt(&mut self) {
+        if let Some(mut client) = self.rtt_client.take() {
+            client.stop();
+        }
+        self.rtt_rx = None;
+        if let Some(ref mut child) = self.server_process.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        self.running = false;
+        self.session.push_rtt(RttOutput {
+            channel: 0,
+            text: "📡 RTT 已断开".into(),
+        });
+    }
+
+    /// 清空 RTT 输出缓冲
+    pub fn clear_output(&mut self) {
+        self.session.rtt_output.clear();
+    }
+
+    /// 非阻塞轮询 RTT 输出
+    pub fn poll_rtt(&mut self) {
+        if let Some(ref rx) = self.rtt_rx {
+            while let Ok(output) = rx.try_recv() {
+                self.session.push_rtt(output);
+            }
+        }
+    }
+}
+
+/// RTT 监视器按键处理
+/// 返回 true 表示请求退出
+pub fn handle_key(state: &mut RttMonitorState, key: crossterm::event::KeyCode) -> bool {
+    match key {
+        crossterm::event::KeyCode::Char('q') | crossterm::event::KeyCode::Esc => {
+            state.should_quit = true;
+            true
+        }
+        _ => false,
     }
 }

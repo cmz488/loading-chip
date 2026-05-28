@@ -42,6 +42,8 @@ use super::rtt::RttOutput;
 pub struct DebugSession {
     /// 目标芯片名称
     pub target: String,
+    /// 后端类型（probe-rs / openocd / pyocd / gdb）
+    pub backend: String,
     /// 程序是否正在运行
     pub running: bool,
     /// 程序是否已终止
@@ -71,9 +73,10 @@ pub struct DebugSession {
 }
 
 impl DebugSession {
-    pub fn new(target: String) -> Self {
+    pub fn new(target: String, backend: String) -> Self {
         Self {
             target,
+            backend,
             running: true,
             terminated: false,
             stop_reason: None,
