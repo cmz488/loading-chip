@@ -3,6 +3,8 @@
 //! 将各子模块的路由合并为统一的 axum Router。
 
 pub mod board;
+pub mod debug;
+pub mod detect;
 pub mod flash;
 pub mod rtt;
 pub mod status;
@@ -17,4 +19,6 @@ pub fn api_router() -> Router<AppState> {
         .merge(board::routes())
         .merge(flash::routes())
         .merge(rtt::routes())
+        .merge(detect::routes())
+        .merge(debug::routes())
 }

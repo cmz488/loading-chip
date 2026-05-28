@@ -46,9 +46,18 @@ async fn flash_handler(
     let be = FlashBackend::from_str(&backend);
     let backend_name = be.yaml_key();
 
-    // 解析板子+后端兼容性
-    let params = match state.registry.resolve(&board, backend_name) {
-        Ok(p) => p,
+    let interface = req.interface.unwrap_or_default();
+    let gdb_port = if req.gdb_port.is_empty() {
+        "3333".into()
+    } else {
+        req.gdb_port
+    };
+
+    let config = match FlashConfig::from_registry(
+        be, &state.registry, &board, &interface, &elf,
+        &gdb_port, &req.pyocd_path, req.timeout,
+    ) {
+        Ok(cfg) => cfg,
         Err(e) => return Json(json!({ "success": false, "message": e })),
     };
 
@@ -67,24 +76,7 @@ async fn flash_handler(
     }
 
     // 执行烧录（阻塞操作，用 spawn_blocking 避免阻塞 async runtime）
-    let registry_id = board.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let config = FlashConfig {
-            backend: be,
-            interface: req.interface.unwrap_or_default(),
-            target: params.target,
-            elf_path: elf,
-            gdb_port: if req.gdb_port.is_empty() {
-                "3333".into()
-            } else {
-                req.gdb_port
-            },
-            pyocd_path: req.pyocd_path,
-            timeout_secs: req.timeout,
-            board_config: params.config,
-            board_extra_args: params.extra_args,
-            board_id: registry_id,
-        };
         do_flash(&config)
     })
     .await
