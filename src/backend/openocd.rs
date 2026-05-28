@@ -33,9 +33,16 @@ impl Backend for OpenOcdBackend {
             args.push("-f".into());
             args.push(mappings::openocd_target_cfg(&config.target).into());
 
-            if config.interface == "swd" {
+            // 自动选择传输协议
+            // "swd" 和 "jtag" 是协议名（映射到默认探针），其余为具体探针型号
+            // is_swd_probe / is_jtag_probe 统一处理两类情况
+            let iface = &config.interface;
+            if crate::backend::mappings::is_swd_probe(iface) {
                 args.push("-c".into());
                 args.push("transport select swd".into());
+            } else if crate::backend::mappings::is_jtag_probe(iface) {
+                args.push("-c".into());
+                args.push("transport select jtag".into());
             }
         }
 

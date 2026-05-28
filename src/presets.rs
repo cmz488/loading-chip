@@ -24,13 +24,13 @@ pub const BACKENDS: &[(&str, &str)] = &[
 /// 调试器/调试接口预设
 /// 每个元素: (key, 描述)
 pub const INTERFACES: &[(&str, &str)] = &[
-    ("swd", "SWD 串行调试（ARM 标准两线调试接口，最常用）"),
-    ("jtag", "JTAG 调试（四线/五线调试接口，兼容性好）"),
-    ("stlink", "ST-Link（ST 官方调试器，STM32 首选）"),
-    ("jlink", "J-Link（SEGGER 专业调试器，速度快）"),
-    ("cmsis-dap", "CMSIS-DAP（ARM 标准调试固件）"),
-    ("daplink", "DAP-Link（开源 CMSIS-DAP 实现）"),
-    ("xds110", "XDS110（TI 官方调试器，MSPM0/MSP430 首选）"),
+    ("stlink", "ST-Link（ST 官方调试器，SWD 协议，STM32 首选）"),
+    ("jlink", "J-Link（SEGGER 专业调试器，JTAG/SWD 双协议）"),
+    ("cmsis-dap", "CMSIS-DAP（ARM 标准调试固件，SWD 协议）"),
+    ("daplink", "DAP-Link（开源 CMSIS-DAP 实现，SWD 协议）"),
+    ("xds110", "XDS110（TI 官方调试器，SWD 协议，MSPM0/MSP430 首选）"),
+    ("swd", "SWD 协议 — 默认使用 CMSIS-DAP 探针（如不确定探针型号选此项）"),
+    ("jtag", "JTAG 协议 — 默认使用 J-Link 探针（如不确定探针型号选此项）"),
 ];
 
 /// 目标芯片预设
