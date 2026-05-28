@@ -124,21 +124,6 @@ impl App {
         }
     }
 
-    /// 获取当前接口的中文描述
-    pub fn iface_label(&self) -> &str {
-        presets::iface_label(&self.interface)
-    }
-
-    /// 获取当前芯片的中文描述
-    pub fn target_label(&self) -> &str {
-        presets::target_label(&self.target)
-    }
-
-    /// 获取当前后端的中文描述
-    pub fn backend_label(&self) -> &str {
-        presets::backend_label(&self.backend)
-    }
-
     /// 获取当前焦点对应的选项数量
     pub fn option_count(&self) -> usize {
         match self.focus {
@@ -217,6 +202,7 @@ impl App {
     }
 
     /// 确认当前下拉选择，将选中值写入 app 字段
+    /// 选择芯片后自动匹配该板子推荐的接口和后端
     pub fn confirm_selection(&mut self) {
         match self.focus {
             Focus::Backend => {
@@ -235,6 +221,24 @@ impl App {
                 let keys = presets::target_keys();
                 if let Some(k) = keys.get(self.target_idx) {
                     self.target = k.clone();
+                    // 根据所选芯片自动匹配推荐接口
+                    if let Some(info) = self.registry.get(&self.target) {
+                        if let Some(recommended_iface) = info.interfaces.first() {
+                            let iface_keys = presets::iface_keys();
+                            if let Some(idx) = iface_keys.iter().position(|i| i == recommended_iface) {
+                                self.interface = recommended_iface.clone();
+                                self.iface_idx = idx;
+                            }
+                        }
+                        // 自动选择可用后端（优先 probe-rs）
+                        if info.supported_backends.contains(&"probe-rs".to_string()) {
+                            let be_keys = presets::backend_keys();
+                            if let Some(idx) = be_keys.iter().position(|b| b == "probe-rs") {
+                                self.backend = "probe-rs".to_string();
+                                self.backend_idx = idx;
+                            }
+                        }
+                    }
                 }
             }
             _ => {}
@@ -242,9 +246,9 @@ impl App {
         self.mode = InputMode::Normal;
         self.status = format!(
             "后端: {}, 接口: {}, 芯片: {}",
-            self.backend_label(),
-            self.iface_label(),
-            self.target_label()
+            self.backend,
+            self.interface,
+            self.target
         );
     }
 
