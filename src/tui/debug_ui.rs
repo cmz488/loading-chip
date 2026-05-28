@@ -53,12 +53,12 @@ fn render_toolbar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     let status = if app.running {
         Span::styled(" ● 已连接 ", Style::default().fg(Color::Green).bold())
     } else {
-        Span::styled(" ○ 未连接 ", Style::default().fg(Color::DarkGray))
+        Span::styled(" ○ 未连接 ", Style::default().fg(TEXT_DIM))
     };
 
     let chip = Span::styled(
         format!(" {} ", app.session.target),
-        Style::default().fg(Color::Cyan),
+        Style::default().fg(ACCENT),
     );
 
     let backend = Span::styled(
@@ -67,17 +67,21 @@ fn render_toolbar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
     );
 
     let count = Span::styled(
-        format!("{} 行", app.session.rtt_output.len()),
-        Style::default().fg(Color::Gray),
+        format!(" {} 行 ", app.session.rtt_output.len()),
+        Style::default().fg(TEXT_DIM),
     );
+
+    let hint = Span::styled("q 退出 | c 清空 | ↑↓ 滚动", Style::default().fg(BORDER));
 
     let text = Line::from(vec![
         Span::styled("📡 RTT 监视器 ", Style::default().fg(Color::Yellow).bold()),
         status, chip, backend, count,
+        Span::raw(" │ "), hint,
     ]);
 
     f.render_widget(
         Paragraph::new(text).block(Block::default().borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(Color::Yellow))),
         area,
     );
@@ -128,31 +132,53 @@ fn render_rtt_output(f: &mut Frame, area: Rect, app: &RttMonitorState) {
 }
 
 // ============================================================================
-// 状态栏
+// 快捷键栏
 // ============================================================================
 
 fn render_status_bar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
-    let shortcuts: Vec<(&str, &str)> = if app.backend == "gdb" {
-        vec![("Esc / q", "返回")]
+    let running = app.running;
+    let is_gdb = app.backend == "gdb";
+
+    // 左侧：运行状态
+    let status_span = if running {
+        Span::styled(" ● 采集 ", Style::default().fg(Color::Green).bold())
+    } else if is_gdb {
+        Span::styled(" ○ GDB模式 ", Style::default().fg(Color::Yellow))
     } else {
-        vec![("Esc / q", "返回"), ("Ctrl+C", "清空"), ("↑ / ↓", "滚动")]
+        Span::styled(" ○ 待机 ", Style::default().fg(TEXT_DIM))
     };
 
-    let spans: Vec<Span> = shortcuts.iter().flat_map(|(key, desc)| {
+    // 中间：快捷键
+    let mut shortcuts: Vec<(&str, &str)> = vec![
+        ("q/Esc", "返回"),
+    ];
+    if !is_gdb {
+        shortcuts.push(("c", "清空"));
+        shortcuts.push(("↑↓", "滚动"));
+    }
+
+    let key_spans: Vec<Span> = shortcuts.iter().flat_map(|(key, desc)| {
         vec![
             Span::styled(format!(" {} ", key),
-                Style::default().fg(Color::Black).bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{} ", desc), Style::default().fg(Color::Gray)),
+                Style::default().fg(Color::Black).bg(ACCENT).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{}  ", desc), Style::default().fg(TEXT_DIM)),
         ]
     }).collect();
 
+    let mut all_spans = vec![status_span, Span::styled(" │ ", Style::default().fg(BORDER))];
+    all_spans.extend(key_spans);
+
     f.render_widget(
-        Paragraph::new(Line::from(spans))
-            .block(Block::default().borders(Borders::TOP)),
+        Paragraph::new(Line::from(all_spans))
+            .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(BORDER))),
         area,
     );
 }
+
+// 本地颜色常量（与 ui.rs theme 模块保持一致）
+const ACCENT:   Color = Color::Rgb(96, 165, 250);
+const BORDER:   Color = Color::Rgb(48, 48, 58);
+const TEXT_DIM: Color = Color::Rgb(108, 108, 122);
 
 // ============================================================================
 // RTT 监视器状态

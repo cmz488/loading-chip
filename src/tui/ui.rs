@@ -67,11 +67,12 @@ fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
 pub fn ui(f: &mut Frame, app: &App) {
     let area = f.area();
 
-    // 主布局：品牌栏 / 表单 / 状态 / 快捷键
+    // 主布局：品牌栏 / 模式切换 / 表单 / 状态 / 快捷键
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // 品牌栏
+            Constraint::Length(4), // 品牌栏 (cmz + 标题)
+            Constraint::Length(1), // 模式切换 (烧录/调试)
             Constraint::Min(12),   // 表单
             Constraint::Length(3), // 状态
             Constraint::Length(1), // 快捷键
@@ -79,11 +80,12 @@ pub fn ui(f: &mut Frame, app: &App) {
         .split(area);
 
     render_brand_bar(f, chunks[0]);
+    render_mode_switch(f, chunks[1], app);
 
     match app.mode {
-        InputMode::Done => render_result(f, chunks[1], app),
+        InputMode::Done => render_result(f, chunks[2], app),
         _ => {
-            render_form(f, chunks[1], app);
+            render_form(f, chunks[2], app);
             // 下拉选择时渲染弹出层
             if app.mode == InputMode::Selecting {
                 render_dropdown(f, area, app);
@@ -93,8 +95,8 @@ pub fn ui(f: &mut Frame, app: &App) {
         }
     }
 
-    render_status(f, chunks[2], app);
-    render_help(f, chunks[3], app);
+    render_status(f, chunks[3], app);
+    render_help(f, chunks[4], app);
 }
 
 // ============================================================================
@@ -125,6 +127,34 @@ fn render_brand_bar(f: &mut Frame, area: Rect) {
                 .border_style(Style::default().fg(WARNING))),
         area,
     );
+}
+
+// ============================================================================
+// 模式切换 — 烧录 ↔ 调试
+// ============================================================================
+
+fn render_mode_switch(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+
+    let flash_style = Style::default().fg(Color::Black).bg(SUCCESS).bold();
+    let debug_style = if app.focus == Focus::ModeSwitch {
+        Style::default().fg(Color::Black).bg(ACCENT).bold()
+    } else {
+        Style::default().fg(TEXT_DIM)
+    };
+
+    let flash_text = Paragraph::new(Line::from(Span::styled(" 🔥 烧录 (F5→调试) ", flash_style)).centered())
+        .block(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(Style::default().fg(SUCCESS)));
+    let debug_text = Paragraph::new(Line::from(Span::styled(" 🐛 调试 (F5) ", debug_style)).centered())
+        .block(Block::default().borders(Borders::ALL).border_type(ratatui::widgets::BorderType::Rounded)
+            .border_style(Style::default().fg(if app.focus == Focus::ModeSwitch { ACCENT } else { BORDER })));
+
+    f.render_widget(flash_text, chunks[0]);
+    f.render_widget(debug_text, chunks[1]);
 }
 
 // ============================================================================
@@ -355,12 +385,11 @@ fn render_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         _ => return,
     };
 
-    // 计算弹出位置（品牌栏4 + 字段高）
-    // 布局：品牌栏(4) + 字段高
+    // 计算弹出位置（品牌栏4 + 模式切换1 + 字段高）
     let popup_y = match app.focus {
-        Focus::Backend => 7,
-        Focus::Interface => 11,
-        Focus::Target => 15,
+        Focus::Backend => 8,
+        Focus::Interface => 12,
+        Focus::Target => 16,
         _ => return,
     };
     let popup_area = Rect {
@@ -407,8 +436,8 @@ fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         return;
     }
 
-    // 品牌栏4 + 后端3+1 + 接口3+1 + 芯片3+1
-    let popup_y = 16;
+    // 品牌栏4 + 模式切换1 + 后端3+1 + 接口3+1 + 芯片3+1
+    let popup_y = 17;
     // ELF 输入框高度不影响下拉位置（下拉在表单外部）
     let elf_rows = app.elf_files.len().min(12);
     let popup_area = Rect {
