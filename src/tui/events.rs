@@ -21,7 +21,10 @@ pub fn handle_key(app: &mut App, code: KeyCode) -> bool {
     }
 
     // F12: 重新检测芯片
-    if let KeyCode::F(12) = code {
+    if let KeyCode::F(12) = code
+        && app.mode != InputMode::Flashing
+        && app.mode != InputMode::EditingElf
+    {
         app.detected_chips = crate::chip_detect::detect_chips();
         if let Some(detected) = app.detected_chips.first() {
             let board_id = detected.board_id.clone()
@@ -32,9 +35,11 @@ pub fn handle_key(app: &mut App, code: KeyCode) -> bool {
                 app.target = detected.chip_name.clone();
             }
             app.interface = detected.suggested_interface.clone();
-            if let Some(idx) = crate::presets::iface_keys()
-                .iter().position(|k| *k == detected.suggested_interface) {
+            let iface_keys = crate::presets::iface_keys();
+            if let Some(idx) = iface_keys.iter().position(|k| *k == detected.suggested_interface) {
                 app.iface_idx = idx;
+            } else {
+                app.iface_idx = 0;
             }
             app.status = format!(
                 "已检测到: {} (芯片: {})", detected.probe_name, detected.chip_name
