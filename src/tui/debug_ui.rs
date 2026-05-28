@@ -62,6 +62,10 @@ fn render_toolbar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
             format!("[{}]  ", app.session.target.clone()),
             Style::default().fg(Color::Cyan),
         ),
+        Span::styled(
+            format!("[{}]  ", app.backend),
+            Style::default().fg(Color::Magenta),
+        ),
     ];
 
     if let Some(ref stop) = app.session.stop_reason {
@@ -380,17 +384,18 @@ fn render_console(f: &mut Frame, area: Rect, app: &RttMonitorState) {
 // 状态栏
 // ============================================================================
 
-fn render_status_bar(f: &mut Frame, area: Rect, _app: &RttMonitorState) {
-    let shortcuts = [
-        ("F5", "继续"),
-        ("F6", "步过"),
-        ("F7", "步入"),
-        ("F8", "步出"),
-        ("F9", "断点"),
-        ("F12", "暂停"),
-        ("Ctrl+R", "RTT"),
-        ("Esc", "退出"),
-    ];
+fn render_status_bar(f: &mut Frame, area: Rect, app: &RttMonitorState) {
+    let shortcuts: Vec<(&str, &str)> = if app.backend == "gdb" {
+        vec![
+            ("Esc / q", "返回"),
+        ]
+    } else {
+        vec![
+            ("Esc / q", "返回"),
+            ("Ctrl+C", "清空"),
+            ("↑ / ↓", "滚动"),
+        ]
+    };
 
     let spans: Vec<Span> = shortcuts
         .iter()
