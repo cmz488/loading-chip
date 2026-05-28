@@ -160,10 +160,13 @@ fn probe_rs_rtt_loop(
     let probe = probes[probe_idx].open()?;
     let mut session = probe.attach(chip, Permissions::default())?;
     let _ = sender.send(RttOutput { channel: 0, text: format!("✅ 已连接 {}", chip) });
-
     let mut core = session.core(0)?;
 
-    // 1. 优先 ELF 符号查找
+    // 等待芯片完成 reset + .data 初始化（RTT 控制块在 .data 段中）
+    let _ = sender.send(RttOutput { channel: 0, text: "⏳ 等待芯片初始化...".into() });
+    thread::sleep(Duration::from_millis(300));
+
+    // 1. 优先 ELF 符号查找（重试几次以等待芯片复位完成）
     let mut rtt: Option<Rtt> = None;
     if let Some(ep) = elf_path {
         if let Some(addr) = find_rtt_symbol_in_elf(ep) {
@@ -171,13 +174,18 @@ fn probe_rs_rtt_loop(
                 channel: 0,
                 text: format!("📍 _SEGGER_RTT @ 0x{:08X}", addr),
             });
-            match Rtt::attach_region(&mut core, &ScanRegion::Exact(addr)) {
-                Ok(r) => { rtt = Some(r); }
-                Err(_) => {
-                    let _ = sender.send(RttOutput {
-                        channel: 1,
-                        text: "⚠️ ELF 符号地址无效，回退到内存扫描...".into(),
-                    });
+            for attempt in 1..=3 {
+                match Rtt::attach_region(&mut core, &ScanRegion::Exact(addr)) {
+                    Ok(r) => { rtt = Some(r); break; }
+                    Err(_) if attempt < 3 => {
+                        thread::sleep(Duration::from_millis(200));
+                    }
+                    Err(_) => {
+                        let _ = sender.send(RttOutput {
+                            channel: 1,
+                            text: "⚠️ ELF 符号地址无效，回退到 SRAM 范围扫描...".into(),
+                        });
+                    }
                 }
             }
         }
@@ -189,12 +197,19 @@ fn probe_rs_rtt_loop(
         rtt = attach_rtt_fallback(&mut core, chip, running);
     }
 
-    // 3. 最终回退：全量 RAM 扫描
+    // 3. 最终回退：ARM Cortex-M SRAM 范围扫描
     let mut rtt = match rtt {
         Some(r) => r,
         None => {
-            let _ = sender.send(RttOutput { channel: 0, text: "🔎 全量 RAM 扫描...".into() });
-            Rtt::attach(&mut core).map_err(|e| format!("RTT attach 失败: {}", e))?
+            let _ = sender.send(RttOutput { channel: 0, text: "🔎 SRAM 范围扫描 (0x20000000-0x20020000)...".into() });
+            // 优先扫描 ARM SRAM 前 128KB（覆盖 STM32/MSPM0/nRF/RP2040 等）
+            if let Ok(r) = Rtt::attach_region(&mut core, &ScanRegion::range(0x2000_0000..0x2002_0000)) {
+                r
+            } else {
+                // 最后尝试 probe-rs 默认的全 RAM 扫描
+                let _ = sender.send(RttOutput { channel: 0, text: "🔎 默认 RAM 扫描...".into() });
+                Rtt::attach(&mut core).map_err(|e| format!("RTT attach 失败: {}", e))?
+            }
         }
     };
 
@@ -251,8 +266,10 @@ fn attach_rtt_fallback(
 ) -> Option<probe_rs::rtt::Rtt> {
     use probe_rs::rtt::{Rtt, ScanRegion};
 
+    let chip_lower = chip.to_lowercase();
+
     // ESP32 已知 RTT 地址
-    if chip.to_lowercase().contains("esp32") {
+    if chip_lower.contains("esp32") {
         let known: &[u64] = &[0x3FC9_1200, 0x3FC9_1000, 0x3FC8_8000, 0x3FFB_0000];
         for &addr in known {
             if !running.load(Ordering::SeqCst) { break; }
@@ -264,8 +281,20 @@ fn attach_rtt_fallback(
                 }
             }
         }
-        // ESP32 SRAM1 范围扫描
         if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x3FC8_8000..0x3FD0_0000)) {
+            return Some(r);
+        }
+    }
+
+    // ARM Cortex-M 通用 SRAM 区域扫描 (STM32, MSPM0, nRF52, RP2040...)
+    // 大部分 Cortex-M MCU 的 SRAM 起始于 0x20000000
+    if chip_lower.contains("mspm0") || chip_lower.contains("stm32")
+        || chip_lower.contains("nrf52") || chip_lower.contains("rp2040")
+        || chip_lower.contains("gd32") || chip_lower.contains("at32")
+    {
+        // 扫描 SRAM 前 128KB: 0x20000000 - 0x20020000
+        // 覆盖 MSPM0G3507 (32KB @ 0x20000000) 和 STM32F4 (128KB+)
+        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x2000_0000..0x2002_0000)) {
             return Some(r);
         }
     }
