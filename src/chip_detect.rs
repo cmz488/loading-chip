@@ -39,9 +39,8 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
 
     probes
         .into_iter()
-        .filter_map(|probe| {
+        .map(|probe| {
             let probe_name = probe.identifier.clone();
-            // 推导接口类型
             let suggested_interface = match probe_name.to_lowercase() {
                 s if s.contains("stlink") => "stlink".to_string(),
                 s if s.contains("jlink") || s.contains("j-link") => "jlink".to_string(),
@@ -52,10 +51,10 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
                 _ => "swd".to_string(),
             };
 
-            // 尝试打开探针并检测芯片
+            // 尝试自动检测芯片（可能失败：克隆探头 / 未知芯片 / 权限不足）
             let chip_name = match probe.open() {
-                Ok(probe) => {
-                    match probe.attach((), probe_rs::Permissions::default()) {
+                Ok(attached) => {
+                    match attached.attach((), probe_rs::Permissions::default()) {
                         Ok(session) => {
                             let name = session.target().name.clone();
                             drop(session);
@@ -67,16 +66,13 @@ fn detect_chips_impl() -> Vec<DetectedChip> {
                 Err(_) => String::new(),
             };
 
-            if chip_name.is_empty() {
-                return None;
-            }
-
-            Some(DetectedChip {
+            // 即使芯片检测失败也返回探头信息（TUI 显示探头名，用户手动选芯片）
+            DetectedChip {
                 probe_name,
                 chip_name,
-                board_id: None, // caller fills via BoardRegistry
+                board_id: None,
                 suggested_interface,
-            })
+            }
         })
         .collect()
 }
