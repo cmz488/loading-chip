@@ -162,11 +162,18 @@ fn probe_rs_rtt_loop(
     let _ = sender.send(RttOutput { channel: 0, text: format!("✅ 已连接 {}", chip) });
     let mut core = session.core(0)?;
 
-    // 等待芯片完成 reset + .data 初始化（RTT 控制块在 .data 段中）
-    let _ = sender.send(RttOutput { channel: 0, text: "⏳ 等待芯片初始化...".into() });
-    thread::sleep(Duration::from_millis(300));
+    // probe.attach() 会 halt 核心 — 需要 reset 让固件跑起来，
+    // 否则 .data 段（包含 RTT 控制块）永远不会从 Flash 解压到 RAM
+    let _ = sender.send(RttOutput { channel: 0, text: "🔄 复位芯片...".into() });
+    // reset_and_halt: 复位后短暂 halt（让 startup code 执行 .data 初始化）
+    // 如果芯片没有在 timeout 内 halt（正常情况：自由运行），忽略错误
+    let _ = core.reset_and_halt(Duration::from_millis(200));
+    // 确保芯片在运行状态
+    let _ = core.run();
+    let _ = sender.send(RttOutput { channel: 0, text: "⏳ 等待 RTT 就绪...".into() });
+    thread::sleep(Duration::from_millis(500));
 
-    // 1. 优先 ELF 符号查找（重试几次以等待芯片复位完成）
+    // 1. 优先 ELF 符号查找
     let mut rtt: Option<Rtt> = None;
     if let Some(ep) = elf_path {
         if let Some(addr) = find_rtt_symbol_in_elf(ep) {
@@ -174,18 +181,13 @@ fn probe_rs_rtt_loop(
                 channel: 0,
                 text: format!("📍 _SEGGER_RTT @ 0x{:08X}", addr),
             });
-            for attempt in 1..=3 {
-                match Rtt::attach_region(&mut core, &ScanRegion::Exact(addr)) {
-                    Ok(r) => { rtt = Some(r); break; }
-                    Err(_) if attempt < 3 => {
-                        thread::sleep(Duration::from_millis(200));
-                    }
-                    Err(_) => {
-                        let _ = sender.send(RttOutput {
-                            channel: 1,
-                            text: "⚠️ ELF 符号地址无效，回退到 SRAM 范围扫描...".into(),
-                        });
-                    }
+            match Rtt::attach_region(&mut core, &ScanRegion::Exact(addr)) {
+                Ok(r) => { rtt = Some(r); }
+                Err(_) => {
+                    let _ = sender.send(RttOutput {
+                        channel: 1,
+                        text: "⚠️ ELF 符号地址无效，回退到 SRAM 扫描...".into(),
+                    });
                 }
             }
         }
