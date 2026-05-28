@@ -471,16 +471,14 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
             .constraints([Constraint::Length(2), Constraint::Min(0)])
             .split(area);
 
-        let status_color = if res.success {
-            SUCCESS
+        let (status_color, border_color) = if res.success {
+            (SUCCESS, SUCCESS)
         } else {
-            ERROR
+            (ERROR, ERROR)
         };
+
         f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                &res.message,
-                Style::default().fg(status_color).bold(),
-            ))),
+            Paragraph::new(Line::from(Span::styled(&res.message, Style::default().fg(status_color).bold()))),
             chunks[0],
         );
 
@@ -491,18 +489,12 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
             res.stderr.as_deref().unwrap_or("（无输出）"),
         );
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-                .border_type(ratatui::widgets::BorderType::Rounded)
-            .border_style(Style::default().fg(if res.success {
-                SUCCESS
-            } else {
-                ERROR
-            }))
-            .title("输出日志");
         f.render_widget(
             Paragraph::new(output)
-                .block(block)
+                .block(Block::default().borders(Borders::ALL)
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .border_style(Style::default().fg(border_color))
+                    .title("输出日志"))
                 .wrap(Wrap { trim: false }),
             chunks[1],
         );
@@ -523,12 +515,12 @@ fn render_status(f: &mut Frame, area: Rect, app: &App) {
                 Style::default().fg(ERROR)
             }
         }
-        _ => Style::default().fg(TEXT),
+        _ => Style::default().fg(TEXT_DIM),
     };
 
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(&app.status, style)))
-            .block(Block::default().borders(Borders::TOP)),
+            .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(BORDER))),
         area,
     );
 }
