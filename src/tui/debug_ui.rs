@@ -647,6 +647,11 @@ pub fn handle_key(state: &mut RttMonitorState, key: crossterm::event::KeyCode) -
             state.should_quit = true;
             true
         }
+        // Ctrl+C: 清空输出
+        crossterm::event::KeyCode::Char('c') => {
+            state.session.rtt_output.clear();
+            false
+        }
         _ => false,
     }
 }
