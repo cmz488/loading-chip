@@ -65,7 +65,7 @@ pub fn run() -> io::Result<()> {
             timeout,
             api,
             api_addr,
-        }) => run_flash(&registry, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api, api_addr)?,
+        }) => run_flash(Arc::new(registry), backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api, api_addr)?,
         Some(cli::Commands::Debug {
             elf,
             target,
@@ -153,7 +153,7 @@ fn run_tui_default(registry: Arc<board::BoardRegistry>) -> io::Result<()> {
 
 #[allow(clippy::too_many_arguments)]
 fn run_flash(
-    registry: &board::BoardRegistry,
+    registry: Arc<board::BoardRegistry>,
     backend: String,
     interface: Option<String>,
     target: Option<String>,
@@ -169,7 +169,7 @@ fn run_flash(
 
     // 启动 API 服务（axum）
     let _api_shutdown = if api {
-        let state = app::state::AppState::new(registry.clone());
+        let state = app::state::AppState::new((*registry).clone());
         let shutdown = api::spawn_server(state, api_addr.clone());
         Some(shutdown)
     } else {
@@ -182,19 +182,19 @@ fn run_flash(
             eprintln!("🟢 API 运行中（按 Ctrl+C 退出）...");
             std::thread::park();
         } else {
-            return run_headless(registry, be, interface, target, elf, gdb_port, pyocd_path, timeout);
+            return run_headless(&*registry, be, interface, target, elf, gdb_port, pyocd_path, timeout);
         }
         return Ok(());
     }
 
     // 命令行模式：全参数 → 跳过 TUI
     if let (Some(i), Some(t), Some(e)) = (&interface, &target, &elf) {
-        return run_cli_mode(registry, be, i, t, e, gdb_port, pyocd_path, timeout);
+        return run_cli_mode(&*registry, be, i, t, e, gdb_port, pyocd_path, timeout);
     }
 
     // TUI 模式（支持烧录 ↔ 调试切换）
     let detected = chip_detect::detect_chips();
-    run_tui_loop(gdb_port, pyocd_path, timeout, detected, Arc::new(registry.clone()))
+    run_tui_loop(gdb_port, pyocd_path, timeout, detected, registry)
 }
 
 #[allow(clippy::too_many_arguments)]
