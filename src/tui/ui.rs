@@ -15,6 +15,27 @@ use crate::presets;
 use super::app::{App, Focus, InputMode};
 
 // ============================================================================
+// 配色方案 — 现代暗色主题
+// ============================================================================
+
+#[allow(dead_code)]
+mod theme {
+    use ratatui::style::Color;
+    pub const BG:       Color = Color::Rgb(18, 18, 24);
+    pub const SURFACE:  Color = Color::Rgb(28, 28, 38);
+    pub const BORDER:   Color = Color::Rgb(48, 48, 58);
+    pub const TEXT:     Color = Color::Rgb(212, 212, 220);
+    pub const TEXT_DIM: Color = Color::Rgb(108, 108, 122);
+    pub const ACCENT:   Color = Color::Rgb(96, 165, 250);
+    pub const SUCCESS:  Color = Color::Rgb(74, 222, 128);
+    pub const ERROR:    Color = Color::Rgb(248, 113, 113);
+    pub const WARNING:  Color = Color::Rgb(251, 191, 36);
+    pub const CYAN:     Color = Color::Cyan;
+    pub const MAGENTA:  Color = Color::Magenta;
+}
+use theme::*;
+
+// ============================================================================
 // 顶层渲染入口
 // ============================================================================
 
@@ -65,9 +86,10 @@ fn render_title_with_mode(f: &mut Frame, area: Rect, app: &App) {
     // 左侧标题
     let title_bar = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+            .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(WARNING));
     let title_text = Paragraph::new("🔥  LOADING-CHIP")
-        .style(Style::default().fg(Color::Yellow).bold())
+        .style(Style::default().fg(WARNING).bold())
         .alignment(Alignment::Left)
         .block(title_bar);
     f.render_widget(title_text, chunks[0]);
@@ -75,7 +97,8 @@ fn render_title_with_mode(f: &mut Frame, area: Rect, app: &App) {
     // 右侧模式切换按钮
     let mode_bar = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+            .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::default().fg(WARNING));
 
     let mode_focused = app.focus == Focus::ModeSwitch;
 
@@ -83,26 +106,26 @@ fn render_title_with_mode(f: &mut Frame, area: Rect, app: &App) {
     let flash_style = if mode_focused && app.focus == Focus::ModeSwitch {
         // 左侧（烧录）按钮选中
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Green)
+            .fg(SURFACE)
+            .bg(SUCCESS)
             .bold()
     } else {
-        Style::default().fg(Color::Green).bold()
+        Style::default().fg(SUCCESS).bold()
     };
 
     let debug_style = if mode_focused {
         // 右侧有焦点，光标在右侧
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
+            .fg(SURFACE)
+            .bg(ACCENT)
             .bold()
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(TEXT_DIM)
     };
 
     let mode_text = Line::from(vec![
         Span::styled(" 🔥烧录 ", flash_style),
-        Span::styled(" │ ", Style::default().fg(Color::DarkGray)),
+        Span::styled(" │ ", Style::default().fg(TEXT_DIM)),
         Span::styled(" 🐛调试 ", debug_style),
     ]);
 
@@ -212,9 +235,9 @@ fn render_form(f: &mut Frame, area: Rect, app: &App) {
 /// 渲染单个表单字段
 fn render_field(f: &mut Frame, area: Rect, label: &str, value: &str, focused: bool, active: bool) {
     let border_style = if focused {
-        Style::default().fg(Color::Cyan).bold()
+        Style::default().fg(ACCENT).bold()
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(TEXT_DIM)
     };
 
     let cursor = if active && focused { " ▌" } else { "" };
@@ -222,21 +245,22 @@ fn render_field(f: &mut Frame, area: Rect, label: &str, value: &str, focused: bo
     let text = Text::from(vec![
         Line::from(Span::styled(
             label,
-            Style::default().fg(Color::White).bold(),
+            Style::default().fg(TEXT).bold(),
         )),
         Line::from(Span::styled(
             format!("{}{}", value, cursor),
-            Style::default().fg(if focused { Color::White } else { Color::Gray }),
+            Style::default().fg(if focused { TEXT } else { TEXT }),
         )),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(border_style)
         .title_bottom(if focused {
             Line::from(" ◀ 已选中 ▶ ")
                 .centered()
-                .style(Style::default().fg(Color::Cyan))
+                .style(Style::default().fg(ACCENT))
         } else {
             Line::from("")
         });
@@ -247,27 +271,27 @@ fn render_field(f: &mut Frame, area: Rect, label: &str, value: &str, focused: bo
 /// 渲染 ELF 路径编辑输入框（带高亮光标和提示）
 fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
     // 输入框使用醒目的绿色/亮色边框
-    let border_style = Style::default().fg(Color::Green).bold();
+    let border_style = Style::default().fg(SUCCESS).bold();
 
     // 构建显示内容
     let display_text = if app.elf_path.is_empty() {
         // 空输入时显示占位提示
         Span::styled(
             "📝 在此输入 ELF 文件路径... ｜",
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(TEXT_DIM),
         )
     } else {
         // 已输入文字 + 闪烁光标
         Span::styled(
             format!("📝 {}｜", app.elf_path),
-            Style::default().fg(Color::White).bg(Color::Rgb(32, 48, 32)),
+            Style::default().fg(TEXT).bg(Color::Rgb(32, 48, 32)),
         )
     };
 
     let text = Text::from(vec![
         Line::from(Span::styled(
             "📁 ELF 文件",
-            Style::default().fg(Color::White).bold(),
+            Style::default().fg(TEXT).bold(),
         )),
         Line::from(""),
         Line::from(display_text),
@@ -275,12 +299,12 @@ fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
 
     let block = Block::default()
         .borders(Borders::ALL)
+            .border_type(ratatui::widgets::BorderType::Thick)
         .border_style(border_style)
-        .border_type(ratatui::widgets::BorderType::Thick)
-        .title_top(Line::from(" ✏️ 正在编辑 ").style(Style::default().fg(Color::Green).bold()))
+        .title_top(Line::from(" ✏️ 正在编辑 ").style(Style::default().fg(SUCCESS).bold()))
         .title_bottom(
             Line::from(" Enter: 确认  |  Esc: 取消  |  Tab: 下一项  |  Backspace: 删除 ")
-                .style(Style::default().fg(Color::DarkGray)),
+                .style(Style::default().fg(TEXT_DIM)),
         );
 
     f.render_widget(Paragraph::new(text).block(block), area);
@@ -290,9 +314,9 @@ fn render_elf_input(f: &mut Frame, area: Rect, app: &App) {
 fn render_flash_button(f: &mut Frame, area: Rect, app: &App) {
     let btn_focused = app.focus == Focus::FlashBtn;
     let btn_style = if btn_focused {
-        Style::default().fg(Color::Black).bg(Color::Green).bold()
+        Style::default().fg(SURFACE).bg(SUCCESS).bold()
     } else {
-        Style::default().fg(Color::White).bg(Color::DarkGray)
+        Style::default().fg(TEXT).bg(TEXT_DIM)
     };
 
     let label = if app.mode == InputMode::Flashing {
@@ -303,15 +327,16 @@ fn render_flash_button(f: &mut Frame, area: Rect, app: &App) {
 
     let text = Text::from(Line::from(Span::styled(label, btn_style)).centered());
     let border_style = if btn_focused {
-        Style::default().fg(Color::Green).bold()
+        Style::default().fg(SUCCESS).bold()
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(TEXT_DIM)
     };
 
     f.render_widget(
         Paragraph::new(text).block(
             Block::default()
                 .borders(Borders::ALL)
+                    .border_type(ratatui::widgets::BorderType::Rounded)
                 .border_style(border_style),
         ),
         area,
@@ -362,9 +387,9 @@ fn render_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
             let prefix = if i == current_idx { "▶ " } else { "  " };
             let text = format!("{}{}  —  {}", prefix, key, desc);
             let style = if i == current_idx {
-                Style::default().fg(Color::Black).bg(Color::Cyan)
+                Style::default().fg(SURFACE).bg(ACCENT)
             } else {
-                Style::default().fg(Color::White).bg(Color::DarkGray)
+                Style::default().fg(TEXT).bg(TEXT_DIM)
             };
             ListItem::new(Line::from(Span::styled(text, style)))
         })
@@ -374,7 +399,8 @@ fn render_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(ACCENT)),
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
@@ -416,9 +442,9 @@ fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
             };
             let text = format!("{}{}", prefix, display);
             let style = if i == app.elf_file_idx {
-                Style::default().fg(Color::Black).bg(Color::Cyan)
+                Style::default().fg(SURFACE).bg(ACCENT)
             } else {
-                Style::default().fg(Color::White).bg(Color::DarkGray)
+                Style::default().fg(TEXT).bg(TEXT_DIM)
             };
             ListItem::new(Line::from(Span::styled(text, style)))
         })
@@ -428,10 +454,11 @@ fn render_elf_dropdown(f: &mut Frame, parent_area: Rect, app: &App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Green))
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(SUCCESS))
                 .title(
                     Line::from(" 📁 找到的 ELF 文件 ")
-                        .style(Style::default().fg(Color::Green).bold()),
+                        .style(Style::default().fg(SUCCESS).bold()),
                 ),
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
@@ -453,9 +480,9 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
             .split(area);
 
         let status_color = if res.success {
-            Color::Green
+            SUCCESS
         } else {
-            Color::Red
+            ERROR
         };
         f.render_widget(
             Paragraph::new(Line::from(Span::styled(
@@ -474,10 +501,11 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
 
         let block = Block::default()
             .borders(Borders::ALL)
+                .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(if res.success {
-                Color::Green
+                SUCCESS
             } else {
-                Color::Red
+                ERROR
             }))
             .title("输出日志");
         f.render_widget(
@@ -495,15 +523,15 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
 
 fn render_status(f: &mut Frame, area: Rect, app: &App) {
     let style = match app.mode {
-        InputMode::Flashing => Style::default().fg(Color::Yellow),
+        InputMode::Flashing => Style::default().fg(WARNING),
         InputMode::Done => {
             if app.result.as_ref().map(|r| r.success).unwrap_or(false) {
-                Style::default().fg(Color::Green)
+                Style::default().fg(SUCCESS)
             } else {
-                Style::default().fg(Color::Red)
+                Style::default().fg(ERROR)
             }
         }
-        _ => Style::default().fg(Color::Gray),
+        _ => Style::default().fg(TEXT),
     };
 
     f.render_widget(
@@ -528,7 +556,7 @@ fn render_help(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             help_text,
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(TEXT_DIM),
         ))),
         area,
     );
