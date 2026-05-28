@@ -28,16 +28,13 @@ impl Backend for OpenOcdBackend {
             mappings::openocd_target_cfg(&config.target).into(),
         ];
 
-        // 自动选择传输协议 — 仅非 ESP 芯片需要（ESP target 配置自带传输选择）
+        // 根据芯片架构自动选择传输协议：
+        // - ARM Cortex-M → SWD（ARM 标准调试协议）
+        // - Xtensa / RISC-V → JTAG（ESP32 系列使用）
+        // - ESP target 配置文件自带传输选择，无需手动指定
         if !config.target.starts_with("esp") {
-            let iface = &config.interface;
-            if crate::backend::mappings::is_swd_probe(iface) {
-                args.push("-c".into());
-                args.push("transport select swd".into());
-            } else if crate::backend::mappings::is_jtag_probe(iface) {
-                args.push("-c".into());
-                args.push("transport select jtag".into());
-            }
+            args.push("-c".into());
+            args.push("transport select swd".into());
         }
 
         args.push("-c".into());
