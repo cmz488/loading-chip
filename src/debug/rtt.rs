@@ -1,7 +1,7 @@
 //! RTT (Real-Time Transfer) 客户端
 //!
 //! 通过调试探针实现双向实时数据传输，无需占用 UART 串口。
-//! 支持多种后端：probe-rs（CLI 命令）、OpenOCD（telnet）。
+//! 支持多种后端：probe-rs（库 API 直接读取 RTT）、OpenOCD（telnet）、pyOCD（telnet）。
 //!
 //! 设计：后台线程持续读取 RTT 输出，通过 channel 发送到 TUI。
 
@@ -18,18 +18,13 @@ use crossbeam_channel::Sender;
 /// RTT 输出记录
 #[derive(Debug, Clone)]
 pub struct RttOutput {
-    /// 通道号（RTT 支持多通道，通常 channel 0 = 终端输出）
     pub channel: u8,
-    /// 文本内容
     pub text: String,
 }
 
 /// RTT 客户端 trait
 pub trait RttClient: Send {
-    /// 是否仍在运行
     fn is_running(&self) -> bool;
-
-    /// 停止 RTT 采集
     fn stop(&mut self);
 }
 
@@ -37,29 +32,19 @@ pub trait RttClient: Send {
 // RTT 配置
 // ============================================================================
 
-/// RTT 连接配置
 #[derive(Debug, Clone)]
 pub struct RttConfig {
-    /// 后端类型：probe-rs / openocd / none
     pub backend: RttBackend,
-    /// 目标芯片名（probe-rs 需要）
     pub chip: String,
-    /// 调试探针 VID:PID（probe-rs 需要）
     pub probe: String,
-    /// OpenOCD telnet 端口
     pub telnet_port: u16,
-    /// ELF 文件路径，用于从符号表查找 _SEGGER_RTT 地址
     pub elf_path: Option<String>,
 }
 
-/// RTT 后端
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RttBackend {
-    /// probe-rs CLI: probe-rs rtt --chip <chip>
     ProbeRs,
-    /// OpenOCD telnet: rtt setup / rtt start / rtt server
     OpenOcd,
-    /// 不使用 RTT
     None,
 }
 
@@ -74,89 +59,41 @@ impl RttBackend {
 }
 
 // ============================================================================
-// probe-rs RTT 客户端
+// probe-rs RTT 客户端（库 API，直接读取 RAM RTT 缓冲区）
 // ============================================================================
 
-/// probe-rs RTT 客户端 — 启动 probe-rs rtt 子进程
 pub struct ProbeRsRtt {
-    child: Option<Child>,
     thread: Option<JoinHandle<()>>,
     running: Arc<AtomicBool>,
 }
 
 impl ProbeRsRtt {
     pub fn spawn(config: &RttConfig, sender: Sender<RttOutput>) -> std::io::Result<Self> {
-        let running = Arc::new(AtomicBool::new(true));
-        let running_clone = Arc::clone(&running);
-
-        // 尝试 ELF 符号查找 — 优先定位 _SEGGER_RTT 地址
-        if let Some(ref elf_path) = config.elf_path {
-            if let Some(addr) = find_rtt_symbol_in_elf(elf_path) {
-                let _ = sender.send(RttOutput {
-                    channel: 0,
-                    text: format!("📍 在 ELF 中找到 _SEGGER_RTT @ 0x{:08X}", addr),
-                });
-            } else {
-                let _ = sender.send(RttOutput {
-                    channel: 1,
-                    text: "⚠️ ELF 中未找到 _SEGGER_RTT 符号，将使用内存扫描...".into(),
-                });
-            }
+        #[cfg(not(feature = "debug"))]
+        {
+            let _ = sender.send(RttOutput { channel: 1, text: "RTT 需要 debug feature".into() });
+            return Ok(Self { thread: None, running: Arc::new(AtomicBool::new(false)) });
         }
 
-        let mut cmd = Command::new("probe-rs");
-        cmd.arg("rtt");
-        cmd.arg("--chip");
-        cmd.arg(&config.chip);
+        #[cfg(feature = "debug")]
+        {
+            let running = Arc::new(AtomicBool::new(true));
+            let running_clone = Arc::clone(&running);
+            let chip = config.chip.clone();
+            let probe_desc = config.probe.clone();
+            let elf_path = config.elf_path.clone();
 
-        if !config.probe.is_empty() {
-            cmd.arg("--probe");
-            cmd.arg(&config.probe);
+            let handle = thread::Builder::new()
+                .name("probe-rs-rtt".into())
+                .spawn(move || {
+                    if let Err(e) = probe_rs_rtt_loop(&chip, &probe_desc, &running_clone, &sender, elf_path.as_deref()) {
+                        let _ = sender.send(RttOutput { channel: 1, text: format!("RTT 错误: {}", e) });
+                    }
+                })
+                .map_err(std::io::Error::other)?;
+
+            Ok(Self { thread: Some(handle), running })
         }
-
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = cmd.spawn()?;
-        let stdout = child.stdout.take().expect("stdout");
-        let stderr = child.stderr.take().expect("stderr");
-
-        // 后台线程读取 stdout
-        let running_stdout = Arc::clone(&running_clone);
-        let sender_stdout = sender.clone();
-        let handle = thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().map_while(Result::ok) {
-                if !running_stdout.load(Ordering::SeqCst) {
-                    break;
-                }
-                let _ = sender_stdout.send(RttOutput {
-                    channel: 0,
-                    text: line,
-                });
-            }
-        });
-
-        // stderr → channel 1
-        thread::spawn(move || {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines().map_while(Result::ok) {
-                if !running_clone.load(Ordering::SeqCst) {
-                    break;
-                }
-                let _ = sender.send(RttOutput {
-                    channel: 1,
-                    text: line,
-                });
-            }
-        });
-
-        Ok(Self {
-            child: Some(child),
-            thread: Some(handle),
-            running,
-        })
     }
 }
 
@@ -167,10 +104,6 @@ impl RttClient for ProbeRsRtt {
 
     fn stop(&mut self) {
         self.running.store(false, Ordering::SeqCst);
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
         if let Some(handle) = self.thread.take() {
             let _ = handle.join();
         }
@@ -181,6 +114,144 @@ impl Drop for ProbeRsRtt {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+// ============================================================================
+// probe-rs 库 API RTT 主循环
+// ============================================================================
+
+#[cfg(feature = "debug")]
+fn probe_rs_rtt_loop(
+    chip: &str,
+    probe_desc: &str,
+    running: &AtomicBool,
+    sender: &Sender<RttOutput>,
+    elf_path: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use probe_rs::probe::list::Lister;
+    use probe_rs::rtt::{Rtt, ScanRegion};
+    use probe_rs::Permissions;
+
+    let _ = sender.send(RttOutput { channel: 0, text: "🔍 正在连接探针...".into() });
+
+    let lister = Lister::new();
+    let probes = lister.list_all();
+    if probes.is_empty() {
+        let _ = sender.send(RttOutput { channel: 1, text: "❌ 未发现调试探针".into() });
+        return Ok(());
+    }
+
+    let probe_idx = if probe_desc.is_empty() {
+        0
+    } else {
+        probes.iter().position(|p| {
+            format!("{:04x}:{:04x}:{}", p.vendor_id, p.product_id,
+                p.serial_number.as_deref().unwrap_or(""))
+                .contains(probe_desc)
+        }).unwrap_or(0)
+    };
+
+    let _ = sender.send(RttOutput {
+        channel: 0,
+        text: format!("🔌 探针: {:04x}:{:04x}",
+            probes[probe_idx].vendor_id, probes[probe_idx].product_id),
+    });
+
+    let probe = probes[probe_idx].open()?;
+    let mut session = probe.attach(chip, Permissions::default())?;
+    let _ = sender.send(RttOutput { channel: 0, text: format!("✅ 已连接 {}", chip) });
+
+    let mut core = session.core(0)?;
+
+    // 1. 优先 ELF 符号查找
+    let mut rtt: Option<Rtt> = None;
+    if let Some(ep) = elf_path {
+        if let Some(addr) = find_rtt_symbol_in_elf(ep) {
+            let _ = sender.send(RttOutput {
+                channel: 0,
+                text: format!("📍 _SEGGER_RTT @ 0x{:08X}", addr),
+            });
+            match Rtt::attach_region(&mut core, &ScanRegion::Exact(addr)) {
+                Ok(r) => { rtt = Some(r); }
+                Err(_) => {
+                    let _ = sender.send(RttOutput {
+                        channel: 1,
+                        text: "⚠️ ELF 符号地址无效，回退到内存扫描...".into(),
+                    });
+                }
+            }
+        }
+    }
+
+    // 2. 回退：已知地址扫描
+    if rtt.is_none() {
+        let _ = sender.send(RttOutput { channel: 0, text: "🔎 扫描 RTT 控制块...".into() });
+        rtt = attach_rtt_fallback(&mut core, chip, running);
+    }
+
+    // 3. 最终回退：全量 RAM 扫描
+    let mut rtt = match rtt {
+        Some(r) => r,
+        None => {
+            let _ = sender.send(RttOutput { channel: 0, text: "🔎 全量 RAM 扫描...".into() });
+            Rtt::attach(&mut core).map_err(|e| format!("RTT attach 失败: {}", e))?
+        }
+    };
+
+    let _ = sender.send(RttOutput {
+        channel: 0,
+        text: format!("✅ RTT 就绪 ({} 通道)", rtt.up_channels().len()),
+    });
+
+    let mut buf = vec![0u8; 4096];
+    while running.load(Ordering::SeqCst) {
+        for i in 0..rtt.up_channels().len() {
+            if let Some(ch) = rtt.up_channel(i) {
+                match ch.read(&mut core, &mut buf) {
+                    Ok(count) if count > 0 => {
+                        let text = String::from_utf8_lossy(&buf[..count]).to_string();
+                        if sender.send(RttOutput { channel: i as u8, text }).is_err() {
+                            return Ok(());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "debug")]
+fn attach_rtt_fallback(
+    core: &mut probe_rs::Core,
+    chip: &str,
+    running: &AtomicBool,
+) -> Option<probe_rs::rtt::Rtt> {
+    use probe_rs::rtt::{Rtt, ScanRegion};
+
+    // ESP32 已知 RTT 地址
+    if chip.to_lowercase().contains("esp32") {
+        let known: &[u64] = &[0x3FC9_1200, 0x3FC9_1000, 0x3FC8_8000, 0x3FFB_0000];
+        for &addr in known {
+            if !running.load(Ordering::SeqCst) { break; }
+            for offset in [-0x2000i64, -0x1000, 0, 0x1000, 0x2000] {
+                let probe = (addr as i64 + offset) as u64;
+                if !(0x3FC8_0000..=0x3FD0_0000).contains(&probe) { continue; }
+                if let Ok(r) = Rtt::attach_region(core, &ScanRegion::Exact(probe)) {
+                    return Some(r);
+                }
+            }
+        }
+        // ESP32 SRAM1 范围扫描
+        if let Ok(r) = Rtt::attach_region(core, &ScanRegion::range(0x3FC8_8000..0x3FD0_0000)) {
+            return Some(r);
+        }
+    }
+
+    None
 }
 
 // ============================================================================
