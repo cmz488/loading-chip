@@ -19,7 +19,7 @@ pub struct Cli {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Commands {
-    /// 运行烧录（默认命令：启动 TUI，或 --headless 输出 JSON，或 --api 启动 HTTP 服务）
+    /// 运行烧录（默认命令：启动 TUI，或 --headless 输出 JSON）
     Run {
         /// 烧录后端: gdb, openocd, probe-rs, pyocd（默认 gdb）
         #[arg(short = 'b', long, default_value = "gdb", value_name = "后端",
