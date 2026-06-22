@@ -110,12 +110,12 @@ fn run_flash_tui_inner(
         // 检查模式切换标志
         if app.switch_to_debug {
             app.switch_to_debug = false;
-            let elf = app.debug_elf.clone();
-            let target = app.debug_target.clone();
-            let backend = app.debug_backend.clone();
-            let interface = app.debug_interface.clone();
-            let port = app.debug_port;
-            let gdb = app.debug_gdb.clone();
+            let elf = app.debug.elf.clone();
+            let target = app.debug.target.clone();
+            let backend = app.debug.backend.clone();
+            let interface = app.debug.interface.clone();
+            let port = app.debug.port;
+            let gdb = app.debug.gdb.clone();
             return Ok(TuiExit::DebugRequested {
                 elf,
                 target,

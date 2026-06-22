@@ -45,7 +45,9 @@ use std::sync::Arc;
 use app::state::AppState;
 use chip_detect::run_detect;
 use clap::Parser;
-use flash::{FlashBackend, FlashConfig, do_flash};
+#[allow(unused_imports)]
+use flash::FlashBackend;
+use flash::FlashConfig;
 
 /// 程序入口 — 解析 CLI 参数并分发到对应模式
 pub fn run() -> io::Result<()> {
@@ -53,11 +55,13 @@ pub fn run() -> io::Result<()> {
 
     // 加载板子配置（全局单例，TUI/API/Headless 共享）
     let registry = board::BoardRegistry::load().map_err(io::Error::other)?;
-    //eprintln!("📋 已加载 {} 块板子配置", registry.len());
     let state = Arc::new(AppState::new(registry));
 
-    match cli.command {
-        None => run_tui_default(state)?,
+    let exit_code = match cli.command {
+        None => {
+            run_tui_default(state)?;
+            0
+        }
         Some(cli::Commands::Run {
             backend,
             interface,
@@ -80,21 +84,31 @@ pub fn run() -> io::Result<()> {
             interface,
             port,
             gdb,
-        }) => run_debug(
-            state,
-            elf,
-            target,
-            backend,
-            interface.unwrap_or_default(),
-            port,
-            gdb.unwrap_or_default(),
-        )?,
+        }) => {
+            run_debug(
+                state,
+                elf,
+                target,
+                backend,
+                interface.unwrap_or_default(),
+                port,
+                gdb.unwrap_or_default(),
+            )?;
+            0
+        }
         Some(cli::Commands::Init { force, output }) => {
             setup::run_init(force, output.as_deref())?;
+            0_i32
         }
-        Some(cli::Commands::Detect {}) => run_detect()?,
-    }
+        Some(cli::Commands::Detect {}) => {
+            run_detect()?;
+            0_i32
+        }
+    };
 
+    if exit_code != 0 {
+        std::process::exit(exit_code);
+    }
     Ok(())
 }
 
@@ -171,25 +185,37 @@ fn run_flash(
     timeout: u64,
     api: bool,
     api_addr: String,
-) -> io::Result<()> {
+) -> io::Result<i32> {
     // 启动 API 服务（与 TUI/Headless 共享同一个 AppState）
     let _api_shutdown = if api {
-        let shutdown = api::spawn_server((*state).clone(), api_addr.clone());
-        Some(shutdown)
+        match api::spawn_server((*state).clone(), api_addr.clone()) {
+            Ok(shutdown) => Some(shutdown),
+            Err(e) => {
+                eprintln!("❌ API 启动失败: {}", e);
+                return Ok(1);
+            }
+        }
     } else {
         None
     };
 
     if headless {
-        if _api_shutdown.is_some() {
+        if let Some(_shutdown) = _api_shutdown {
             eprintln!("🟢 API 运行中（按 Ctrl+C 退出）...");
-            std::thread::park();
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .map_err(io::Error::other)?;
+            rt.block_on(async {
+                tokio::signal::ctrl_c().await.ok();
+                eprintln!("\n正在关闭...");
+            });
+            return Ok(0);
         } else {
             return run_headless(
                 &state, backend, interface, target, elf, gdb_port, pyocd_path, timeout,
             );
         }
-        return Ok(());
     }
 
     // 命令行模式：全参数 → 跳过 TUI
@@ -198,7 +224,8 @@ fn run_flash(
     }
 
     // TUI 模式
-    run_tui_loop(gdb_port, pyocd_path, timeout, state)
+    run_tui_loop(gdb_port, pyocd_path, timeout, state)?;
+    Ok(0)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -211,37 +238,9 @@ fn run_headless(
     gdb_port: String,
     pyocd_path: String,
     timeout: u64,
-) -> io::Result<()> {
-    match (interface, target, elf) {
-        (Some(i), Some(t), Some(e)) => {
-            let be = FlashBackend::from_str(&backend);
-            let config = match FlashConfig::from_registry(
-                be,
-                &state.registry,
-                &t,
-                &i,
-                &e,
-                &gdb_port,
-                &pyocd_path,
-                timeout,
-            ) {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    let result = flash::FlashResult {
-                        success: false,
-                        message: err,
-                        command: String::new(),
-                        stdout: None,
-                        stderr: None,
-                    };
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
-                    std::process::exit(1);
-                }
-            };
-            let result = do_flash(&config);
-            println!("{}", serde_json::to_string_pretty(&result).unwrap());
-            std::process::exit(if result.success { 0 } else { 1 });
-        }
+) -> io::Result<i32> {
+    let (i, t, e) = match (interface, target, elf) {
+        (Some(i), Some(t), Some(e)) => (i, t, e),
         _ => {
             println!(
                 "{}",
@@ -254,9 +253,17 @@ fn run_headless(
                 })
                 .unwrap()
             );
-            std::process::exit(1);
+            return Ok(1);
         }
-    }
+    };
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(io::Error::other)?;
+    let result = rt.block_on(state.flash(&backend, &t, &i, &e, &gdb_port, &pyocd_path, timeout));
+    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    Ok(if result.success { 0 } else { 1 })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -269,37 +276,25 @@ fn run_cli_mode(
     gdb_port: String,
     pyocd_path: String,
     timeout: u64,
-) -> io::Result<()> {
-    let be = FlashBackend::from_str(&backend);
-    let config = match FlashConfig::from_registry(
-        be,
-        &state.registry,
-        target,
-        interface,
-        elf,
-        &gdb_port,
-        &pyocd_path,
-        timeout,
-    ) {
-        Ok(cfg) => cfg,
-        Err(err) => {
-            eprintln!("{}", err);
-            std::process::exit(1);
-        }
-    };
-    let result = do_flash(&config);
+) -> io::Result<i32> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(io::Error::other)?;
+    let result = rt.block_on(state.flash(&backend, target, interface, elf, &gdb_port, &pyocd_path, timeout));
+
     println!("{}", result.message);
-    if let Some(ref stdout) = result.stdout {
-        if !stdout.trim().is_empty() {
-            println!("\n--- 输出 ---\n{}", stdout);
-        }
+    if let Some(ref stdout) = result.stdout
+        && !stdout.trim().is_empty()
+    {
+        println!("\n--- 输出 ---\n{}", stdout);
     }
-    if let Some(ref stderr) = result.stderr {
-        if !stderr.trim().is_empty() {
-            eprintln!("\n--- 错误 ---\n{}", stderr);
-        }
+    if let Some(ref stderr) = result.stderr
+        && !stderr.trim().is_empty()
+    {
+        eprintln!("\n--- 错误 ---\n{}", stderr);
     }
-    std::process::exit(if result.success { 0 } else { 1 });
+    Ok(if result.success { 0 } else { 1 })
 }
 
 // ============================================================================

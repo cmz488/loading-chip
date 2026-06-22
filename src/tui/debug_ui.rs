@@ -16,13 +16,12 @@ use ratatui::{
     Frame,
 };
 
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
 
 use crossbeam_channel::Receiver;
 
 use crate::debug::rtt::{
-    RttBackend, RttClient, RttConfig, RttOutput, ProbeRsRtt,
-    spawn_openocd_rtt, spawn_pyocd_rtt,
+    create_rtt_client, RttClient, RttOutput,
 };
 use crate::debug::session::DebugSession;
 
@@ -212,54 +211,35 @@ impl RttMonitorState {
     }
 
     pub fn start_rtt(&mut self) {
-        if self.running { return; }
+        if self.running {
+            return;
+        }
         let (tx, rx) = crossbeam_channel::unbounded();
 
-        match self.backend.as_str() {
-            "openocd" => {
-                let icfg = crate::backend::mappings::openocd_interface_cfg(&self.interface);
-                let tcfg = crate::backend::mappings::openocd_target_cfg(&self.session.target);
-                match Command::new("openocd")
-                    .args(["-f", icfg, "-f", tcfg, "-c", &format!("gdb_port {}", self.gdb_port)])
-                    .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-                {
-                    Ok(c) => { self.server_process = Some(c); self.session.push_rtt(RttOutput { channel: 0, text: "🟢 OpenOCD 已启动".into() }); std::thread::sleep(std::time::Duration::from_millis(500)); }
-                    Err(e) => { self.session.push_rtt(RttOutput { channel: 1, text: format!("❌ OpenOCD: {}", e) }); return; }
-                }
-                match spawn_openocd_rtt(4444, tx) {
-                    Ok(c) => { self.rtt_client = Some(Box::new(c)); self.rtt_rx = Some(rx); self.running = true; }
-                    Err(e) => { self.session.push_rtt(RttOutput { channel: 1, text: format!("❌ RTT: {}", e) }); }
-                }
+        match create_rtt_client(
+            &self.backend,
+            &self.session.target,
+            &self.interface,
+            &self.elf_path,
+            self.gdb_port,
+            &self.pyocd_path,
+            tx,
+        ) {
+            Ok((client, child)) => {
+                self.rtt_client = Some(client);
+                self.rtt_rx = Some(rx);
+                self.server_process = child;
+                self.running = true;
+                self.session.push_rtt(RttOutput {
+                    channel: 0,
+                    text: "📡 RTT 已启动".into(),
+                });
             }
-            "pyocd" => {
-                let t = crate::backend::mappings::pyocd_target(&self.session.target);
-                let bin = if self.pyocd_path.is_empty() { "pyocd".into() } else { self.pyocd_path.clone() };
-                match Command::new(&bin)
-                    .args(["gdbserver", "--target", t, "--port", &self.gdb_port.to_string(), "--telnet-port", "4444"])
-                    .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-                {
-                    Ok(c) => { self.server_process = Some(c); self.session.push_rtt(RttOutput { channel: 0, text: format!("🟢 pyOCD 已启动 :{}", self.gdb_port) }); std::thread::sleep(std::time::Duration::from_millis(500)); }
-                    Err(e) => { self.session.push_rtt(RttOutput { channel: 1, text: format!("❌ pyOCD: {}", e) }); return; }
-                }
-                match spawn_pyocd_rtt(4444, tx) {
-                    Ok(c) => { self.rtt_client = Some(Box::new(c)); self.rtt_rx = Some(rx); self.running = true; }
-                    Err(e) => { self.session.push_rtt(RttOutput { channel: 1, text: format!("❌ RTT: {}", e) }); }
-                }
-            }
-            "gdb" => {
-                self.running = false;
-                self.session.push_rtt(RttOutput { channel: 1, text: "⚠️ GDB 模式下 RTT 不可用，请使用 GDB 控制台手动连接".into() });
-            }
-            _ => {
-                let cfg = RttConfig {
-                    backend: RttBackend::ProbeRs, chip: self.session.target.clone(),
-                    probe: String::new(), telnet_port: 3333, elf_path: Some(self.elf_path.clone()),
-                    broadcast: None,
-                };
-                match ProbeRsRtt::spawn(&cfg, tx) {
-                    Ok(c) => { self.rtt_client = Some(Box::new(c)); self.rtt_rx = Some(rx); self.running = true; self.session.push_rtt(RttOutput { channel: 0, text: "📡 RTT 已启动 (probe-rs)".into() }); }
-                    Err(e) => { self.session.push_rtt(RttOutput { channel: 1, text: format!("❌ RTT: {}", e) }); }
-                }
+            Err(e) => {
+                self.session.push_rtt(RttOutput {
+                    channel: 1,
+                    text: format!("❌ {}", e),
+                });
             }
         }
     }

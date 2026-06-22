@@ -79,7 +79,20 @@ impl AppState {
         pyocd_path: &str,
         timeout_secs: u64,
     ) -> FlashResult {
-        let be = FlashBackend::from_str(backend);
+        let be = match FlashBackend::from_str(backend) {
+            Ok(b) => b,
+            Err(e) => {
+                let result = FlashResult {
+                    success: false, message: e,
+                    command: String::new(), stdout: None, stderr: None,
+                };
+                let mut last = self.last_result.lock().await;
+                *last = Some(result.clone());
+                let mut s = self.run_state.lock().await;
+                *s = RunState::FlashDone;
+                return result;
+            }
+        };
 
         // 更新状态
         {

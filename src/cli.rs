@@ -22,7 +22,8 @@ pub enum Commands {
     /// 运行烧录（默认命令：启动 TUI，或 --headless 输出 JSON，或 --api 启动 HTTP 服务）
     Run {
         /// 烧录后端: gdb, openocd, probe-rs, pyocd（默认 gdb）
-        #[arg(short = 'b', long, default_value = "gdb", value_name = "后端")]
+        #[arg(short = 'b', long, default_value = "gdb", value_name = "后端",
+              value_parser = ["gdb", "openocd", "probe-rs", "pyocd"])]
         backend: String,
 
         /// 调试接口: swd, jtag, stlink, jlink, cmsis-dap, daplink
@@ -84,7 +85,8 @@ pub enum Commands {
         target: String,
 
         /// 烧录后端: probe-rs, openocd, gdb, pyocd（默认 probe-rs）
-        #[arg(short = 'b', long, default_value = "probe-rs", value_name = "后端")]
+        #[arg(short = 'b', long, default_value = "probe-rs", value_name = "后端",
+              value_parser = ["gdb", "openocd", "probe-rs", "pyocd"])]
         backend: String,
 
         /// 调试接口: swd, jtag, stlink, jlink, cmsis-dap, daplink

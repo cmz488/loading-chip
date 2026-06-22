@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::app::state::AppState;
-use crate::debug::rtt::{ProbeRsRtt, RttBackend, RttConfig};
+use crate::debug::rtt::create_rtt_client;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -20,6 +20,7 @@ struct DebugStartRequest {
     backend: Option<String>,
     interface: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     probe: String,
 }
 
@@ -38,34 +39,21 @@ async fn debug_start_handler(
         }
     }
 
-    // 根据后端类型创建 RTT 配置
+    // 使用统一工厂创建 RTT 客户端
     let (tx, _rx) = crossbeam_channel::unbounded();
-    let rtt_backend = RttBackend::from_str(&backend);
-    let config = RttConfig {
-        backend: rtt_backend,
-        chip: req.target.clone(),
-        probe: req.probe,
-        telnet_port: 3333,
-        elf_path: Some(req.elf.clone()),
-        broadcast: Some(state.rtt_tx.clone()),
-    };
 
-    // 启动 RTT 客户端
-    let client: Box<dyn crate::debug::rtt::RttClient> = match rtt_backend {
-        RttBackend::ProbeRs => {
-            match ProbeRsRtt::spawn(&config, tx) {
-                Ok(c) => Box::new(c),
-                Err(e) => return Json(json!({ "status": "error", "message": format!("启动 probe-rs RTT 失败: {}", e) })),
-            }
-        }
-        RttBackend::OpenOcd => {
-            match crate::debug::rtt::spawn_openocd_rtt(4444, tx) {
-                Ok(c) => Box::new(c),
-                Err(e) => return Json(json!({ "status": "error", "message": format!("启动 OpenOCD RTT 失败: {}", e) })),
-            }
-        }
-        RttBackend::None => {
-            return Json(json!({ "status": "error", "message": "不支持此后端类型的 RTT" }));
+    let client: Box<dyn crate::debug::rtt::RttClient> = match create_rtt_client(
+        &backend,
+        &req.target,
+        &interface,
+        &req.elf,
+        3333,
+        "", // pyocd_path — API 模式不使用
+        tx,
+    ) {
+        Ok((client, _child)) => client,
+        Err(e) => {
+            return Json(json!({ "status": "error", "message": e }));
         }
     };
 

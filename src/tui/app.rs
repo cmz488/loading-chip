@@ -32,6 +32,20 @@ pub enum InputMode {
     Done,         // 烧录完成
 }
 
+/// 固件文件扩展名列表（ELF、HEX、BIN 等嵌入式固件格式）
+const FIRMWARE_EXTS: &[&str] = &[".elf", ".out", ".bin", ".hex", ".axf", ".ihx"];
+
+/// 调试模式参数
+#[derive(Default)]
+pub(crate) struct DebugParams {
+    pub elf: String,
+    pub target: String,
+    pub backend: String,
+    pub interface: String,
+    pub port: u16,
+    pub gdb: String,
+}
+
 /// TUI 应用状态
 pub struct App {
     // --- 烧录参数 ---
@@ -64,12 +78,7 @@ pub struct App {
     pub result: Option<FlashResult>,
 
     // --- 调试模式参数 ---
-    pub debug_elf: String,
-    pub debug_target: String,
-    pub debug_backend: String,
-    pub debug_interface: String,
-    pub debug_port: u16,
-    pub debug_gdb: String,
+    pub debug: DebugParams,
 
     // --- 模式切换标志 ---
     pub switch_to_debug: bool,
@@ -111,12 +120,11 @@ impl App {
             list_state,
             status: "就绪 — F5: 调试模式  |  Tab: 切换字段  |  ↑↓: 选择  |  Enter: 确认".to_string(),
             result: None,
-            debug_elf: String::new(),
-            debug_target: String::new(),
-            debug_backend: "probe-rs".to_string(),
-            debug_interface: String::new(),
-            debug_port: 3333,
-            debug_gdb: String::new(),
+            debug: DebugParams {
+                backend: "probe-rs".to_string(),
+                port: 3333,
+                ..Default::default()
+            },
             switch_to_debug: false,
             should_quit: false,
             state,
@@ -151,16 +159,10 @@ impl App {
             return;
         }
         match self.focus {
-            Focus::Backend => {
-                self.backend_idx = self.backend_idx.checked_sub(1).unwrap_or(count - 1);
-            }
-            Focus::Interface => {
-                self.iface_idx = self.iface_idx.checked_sub(1).unwrap_or(count - 1);
-            }
-            Focus::Target => {
-                self.target_idx = self.target_idx.checked_sub(1).unwrap_or(count - 1);
-            }
-            _ => {}
+            Focus::Backend => self.backend_idx = self.backend_idx.checked_sub(1).unwrap_or(count - 1),
+            Focus::Interface => self.iface_idx = self.iface_idx.checked_sub(1).unwrap_or(count - 1),
+            Focus::Target => self.target_idx = self.target_idx.checked_sub(1).unwrap_or(count - 1),
+            _ => return,
         }
         self.list_state.select(Some(self.current_idx()));
     }
@@ -172,26 +174,20 @@ impl App {
             return;
         }
         match self.focus {
-            Focus::Backend => {
-                self.backend_idx = (self.backend_idx + 1) % count;
-            }
-            Focus::Interface => {
-                self.iface_idx = (self.iface_idx + 1) % count;
-            }
-            Focus::Target => {
-                self.target_idx = (self.target_idx + 1) % count;
-            }
-            _ => {}
+            Focus::Backend => self.backend_idx = (self.backend_idx + 1) % count,
+            Focus::Interface => self.iface_idx = (self.iface_idx + 1) % count,
+            Focus::Target => self.target_idx = (self.target_idx + 1) % count,
+            _ => return,
         }
         self.list_state.select(Some(self.current_idx()));
     }
 
     /// 保存当前烧录参数到调试参数字段（切换到调试模式时用）
     pub fn sync_to_debug(&mut self) {
-        self.debug_elf = self.elf_path.clone();
-        self.debug_target = self.target.clone();
-        self.debug_backend = self.backend.clone();
-        self.debug_interface = self.interface.clone();
+        self.debug.elf = self.elf_path.clone();
+        self.debug.target = self.target.clone();
+        self.debug.backend = self.backend.clone();
+        self.debug.interface = self.interface.clone();
         // gdb 留空（由调试模式自动检测）
     }
 
@@ -253,15 +249,6 @@ impl App {
         self.status = format!("固件: {}", self.elf_path);
     }
 
-    /// 固件文件扩展名（覆盖常见嵌入式工具链输出）
-    /// .elf  — GCC / PlatformIO / CMake / ESP-IDF
-    /// .out  — TI CCS (COFF/ELF)
-    /// .bin  — 原始二进制
-    /// .hex  — Intel HEX
-    /// .axf  — Keil MDK
-    /// .ihx  — Intel HEX (SDCC)
-    const FIRMWARE_EXTS: &[&str] = &[".elf", ".out", ".bin", ".hex", ".axf", ".ihx"];
-
     /// 搜索当前目录及子目录中的固件文件 (.elf/.out/.bin/.hex/.axf/.ihx)
     /// 若找到则填充 self.elf_files 列表（按路径长度排序）
     /// 支持 PlatformIO、CMake、ESP-IDF、TI CCS 等常见构建目录
@@ -294,7 +281,7 @@ impl App {
                     }
                     self.scan_for_firmware(&path, depth + 1, max_depth);
                 } else if path.is_file()
-                    && Self::FIRMWARE_EXTS.iter().any(|ext| name.ends_with(ext))
+                    && FIRMWARE_EXTS.iter().any(|ext| name.ends_with(ext))
                 {
                     if let Ok(abs) = path.canonicalize() {
                         self.elf_files.push(abs.to_string_lossy().to_string());
@@ -309,7 +296,14 @@ impl App {
         self.mode = InputMode::Flashing;
         self.status = format!("正在烧录 {} → {} ...", self.interface, self.target);
 
-        let be = FlashBackend::from_str(&self.backend);
+        let be = match FlashBackend::from_str(&self.backend) {
+            Ok(b) => b,
+            Err(e) => {
+                self.status = e;
+                self.mode = InputMode::Normal;
+                return;
+            }
+        };
         let elf = if self.elf_path.is_empty() { "firmware.elf" } else { &self.elf_path };
 
         let config = match FlashConfig::from_registry(

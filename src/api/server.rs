@@ -45,11 +45,13 @@ pub async fn start_server(state: AppState, addr: &str) -> Result<(), String> {
 
 /// 在后台 tokio runtime 上启动 API 服务器（不阻塞）
 ///
-/// 返回 shutdown 信号 sender，主线程可通过此关闭服务器。
+/// 返回 shutdown 信号 sender，调用者可通过此关闭服务器。
+/// 启动失败时返回错误信息。
 pub fn spawn_server(
     state: AppState,
     addr: String,
-) -> tokio::sync::oneshot::Sender<()> {
+) -> Result<tokio::sync::oneshot::Sender<()>, String> {
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel::<Result<(), String>>();
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     std::thread::spawn(move || {
@@ -59,16 +61,18 @@ pub fn spawn_server(
             .expect("build tokio runtime");
 
         rt.block_on(async {
-            let app = routes::api_router().with_state(state.clone());
-
             let listener = match TcpListener::bind(&addr).await {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("❌ API 绑定失败: {}", e);
+                    let _ = started_tx.send(Err(format!("绑定 {}: {}", addr, e)));
                     return;
                 }
             };
 
+            // 绑定成功，通知调用者
+            let _ = started_tx.send(Ok(()));
+
+            let app = routes::api_router().with_state(state.clone());
             let actual = listener.local_addr().unwrap_or_else(|_| addr.parse().unwrap());
             eprintln!("🔌 API 服务已启动: http://{}", actual);
 
@@ -84,5 +88,10 @@ pub fn spawn_server(
         });
     });
 
-    shutdown_tx
+    // 等待启动确认（最多 3 秒）
+    match started_rx.blocking_recv() {
+        Ok(Ok(())) => Ok(shutdown_tx),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("API 服务器线程意外退出".into()),
+    }
 }

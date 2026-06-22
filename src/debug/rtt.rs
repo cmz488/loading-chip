@@ -466,6 +466,82 @@ pub fn spawn_pyocd_rtt(telnet_port: u16, sender: Sender<RttOutput>) -> std::io::
 }
 
 // ============================================================================
+// 统一 RTT 客户端工厂（TUI 和 API 共用）
+// ============================================================================
+
+/// 根据后端类型创建 RTT 客户端和可选的子进程句柄
+///
+/// TUI 和 API 模式共享此工厂函数，避免后端 spawn 逻辑重复。
+///
+/// # Returns
+/// - `Ok((client, child))` — RTT 客户端 + OpenOCD/pyOCD 子进程（probe-rs 时为 None）
+/// - `Err(msg)` — 启动失败的原因
+pub fn create_rtt_client(
+    backend: &str,
+    target: &str,
+    interface: &str,
+    elf_path: &str,
+    gdb_port: u16,
+    pyocd_path: &str,
+    tx: Sender<RttOutput>,
+) -> Result<(Box<dyn RttClient>, Option<std::process::Child>), String> {
+    match backend {
+        "openocd" => {
+            let icfg = crate::backend::mappings::openocd_interface_cfg(interface);
+            let tcfg = crate::backend::mappings::openocd_target_cfg(target);
+            let child = std::process::Command::new("openocd")
+                .args(["-f", icfg, "-f", tcfg, "-c", &format!("gdb_port {}", gdb_port)])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|e| format!("OpenOCD 启动失败: {}", e))?;
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let client = spawn_openocd_rtt(4444, tx)
+                .map_err(|e| format!("OpenOCD RTT 连接失败: {}", e))?;
+            Ok((Box::new(client), Some(child)))
+        }
+        "pyocd" => {
+            let t = crate::backend::mappings::pyocd_target(target);
+            let bin = if pyocd_path.is_empty() {
+                "pyocd".to_string()
+            } else {
+                pyocd_path.to_string()
+            };
+            let child = std::process::Command::new(&bin)
+                .args([
+                    "gdbserver", "--target", t,
+                    "--port", &gdb_port.to_string(),
+                    "--telnet-port", "4444",
+                ])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map_err(|e| format!("pyOCD 启动失败: {}", e))?;
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let client = spawn_pyocd_rtt(4444, tx)
+                .map_err(|e| format!("pyOCD RTT 连接失败: {}", e))?;
+            Ok((Box::new(client), Some(child)))
+        }
+        "gdb" => Err("GDB 模式下 RTT 不可用".into()),
+        _ => {
+            let cfg = RttConfig {
+                backend: RttBackend::ProbeRs,
+                chip: target.to_string(),
+                probe: String::new(),
+                telnet_port: gdb_port,
+                elf_path: if elf_path.is_empty() { None } else { Some(elf_path.to_string()) },
+                broadcast: None,
+            };
+            let client = ProbeRsRtt::spawn(&cfg, tx)
+                .map_err(|e| format!("probe-rs RTT 启动失败: {}", e))?;
+            Ok((Box::new(client), None))
+        }
+    }
+}
+
+// ============================================================================
 // RTT 通道（统一接收端）
 // ============================================================================
 

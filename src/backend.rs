@@ -65,13 +65,17 @@ pub enum FlashBackend {
 }
 
 impl FlashBackend {
-    /// 从字符串解析后端类型
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "openocd" => Self::OpenOcd,
-            "probe-rs" => Self::ProbeRs,
-            "pyocd" => Self::PyOcd,
-            _ => Self::Gdb,
+    /// 从字符串解析后端类型。无效输入返回错误信息。
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s.to_lowercase().as_str() {
+            "gdb" => Ok(Self::Gdb),
+            "openocd" => Ok(Self::OpenOcd),
+            "probe-rs" | "probe_rs" => Ok(Self::ProbeRs),
+            "pyocd" | "pyocd-gdbserver" => Ok(Self::PyOcd),
+            other => Err(format!(
+                "未知后端 '{}'，可选: gdb, openocd, probe-rs, pyocd",
+                other
+            )),
         }
     }
 
@@ -367,11 +371,12 @@ mod tests {
 
     #[test]
     fn backend_from_str() {
-        assert_eq!(FlashBackend::from_str("gdb"), FlashBackend::Gdb);
-        assert_eq!(FlashBackend::from_str("openocd"), FlashBackend::OpenOcd);
-        assert_eq!(FlashBackend::from_str("probe-rs"), FlashBackend::ProbeRs);
-        assert_eq!(FlashBackend::from_str("pyocd"), FlashBackend::PyOcd);
-        assert_eq!(FlashBackend::from_str("unknown"), FlashBackend::Gdb);
+        assert_eq!(FlashBackend::from_str("gdb").unwrap(), FlashBackend::Gdb);
+        assert_eq!(FlashBackend::from_str("openocd").unwrap(), FlashBackend::OpenOcd);
+        assert_eq!(FlashBackend::from_str("probe-rs").unwrap(), FlashBackend::ProbeRs);
+        assert_eq!(FlashBackend::from_str("pyocd").unwrap(), FlashBackend::PyOcd);
+        assert!(FlashBackend::from_str("unknown").is_err());
+        assert!(FlashBackend::from_str("probe_rs").is_ok());
     }
 
     #[test]
