@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::backend::mappings;
 use crate::backend::Backend;
-use crate::FlashConfig;
+use crate::backend::FlashConfig;
 
 /// pyOCD 后端
 #[derive(Debug, Clone, Copy, Default)]
@@ -61,7 +61,7 @@ mod tests {
 
     fn cfg() -> FlashConfig {
         FlashConfig {
-            backend: crate::FlashBackend::PyOcd,
+            backend: crate::backend::FlashBackend::PyOcd,
             interface: String::new(),
             target: "stm32f4".into(),
             elf_path: "a.elf".into(),

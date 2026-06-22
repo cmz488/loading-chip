@@ -4,7 +4,7 @@
 //! 需要外部 GDB Server（如 OpenOCD / pyOCD）已经在指定端口监听。
 
 use crate::backend::Backend;
-use crate::FlashConfig;
+use crate::backend::FlashConfig;
 
 /// GDB 后端
 #[derive(Debug, Clone, Copy, Default)]
@@ -47,7 +47,7 @@ mod tests {
 
     fn cfg() -> FlashConfig {
         FlashConfig {
-            backend: crate::FlashBackend::Gdb,
+            backend: crate::backend::FlashBackend::Gdb,
             interface: "swd".into(),
             target: "stm32f4".into(),
             elf_path: "a.elf".into(),

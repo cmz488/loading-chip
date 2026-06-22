@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use crate::app::state::AppState;
 use crate::chip_detect::DetectedChip;
-use crate::flash::{do_flash, FlashBackend, FlashConfig, FlashResult};
+use crate::backend::{do_flash, FlashBackend, FlashConfig, FlashResult};
 use crate::presets;
 
 /// 当前聚焦的输入字段
@@ -86,7 +86,7 @@ pub struct App {
     // --- 退出标志 ---
     pub should_quit: bool,
 
-    /// 共享应用状态（TUI/API/Headless 共用）
+    /// 共享应用状态（TUI/CLI/Headless 共用）
     pub state: Arc<AppState>,
     /// 自动检测到的芯片列表
     pub detected_chips: Vec<DetectedChip>,
@@ -99,6 +99,7 @@ impl App {
         pyocd_path: String,
         timeout_secs: u64,
         state: Arc<AppState>,
+        detected_chips: Vec<DetectedChip>,
     ) -> Self {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
@@ -128,7 +129,7 @@ impl App {
             switch_to_debug: false,
             should_quit: false,
             state,
-            detected_chips: Vec::new(),
+            detected_chips,
         }
     }
 

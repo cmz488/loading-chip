@@ -5,7 +5,7 @@
 
 use crate::backend::mappings;
 use crate::backend::Backend;
-use crate::FlashConfig;
+use crate::backend::FlashConfig;
 
 /// OpenOCD 后端
 #[derive(Debug, Clone, Copy, Default)]
@@ -59,7 +59,7 @@ mod tests {
 
     fn cfg() -> FlashConfig {
         FlashConfig {
-            backend: crate::FlashBackend::OpenOcd,
+            backend: crate::backend::FlashBackend::OpenOcd,
             interface: "swd".into(),
             target: "stm32f4".into(),
             elf_path: "a.elf".into(),
@@ -74,7 +74,7 @@ mod tests {
 
     fn esp_cfg() -> FlashConfig {
         FlashConfig {
-            backend: crate::FlashBackend::OpenOcd,
+            backend: crate::backend::FlashBackend::OpenOcd,
             interface: "usb-jtag".into(),
             target: "esp32s3".into(),
             elf_path: "a.elf".into(),

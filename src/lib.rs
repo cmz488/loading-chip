@@ -32,7 +32,6 @@ mod chip_detect;
 mod cli;
 mod config;
 mod debug;
-mod flash;
 mod presets;
 mod setup;
 mod tui;
@@ -41,17 +40,15 @@ use std::io;
 use std::sync::Arc;
 
 use app::state::AppState;
+use backend::FlashResult;
 use chip_detect::run_detect;
 use clap::Parser;
-#[allow(unused_imports)]
-use flash::FlashBackend;
-use flash::FlashConfig;
 
 /// 程序入口 — 解析 CLI 参数并分发到对应模式
 pub fn run() -> io::Result<()> {
     let cli = cli::Cli::parse();
 
-    // 加载板子配置（全局单例，TUI/API/Headless 共享）
+    // 加载板子配置（全局单例，TUI/CLI/Headless 共享）
     let registry = board::BoardRegistry::load().map_err(io::Error::other)?;
     let state = Arc::new(AppState::new(registry));
 
@@ -81,7 +78,6 @@ pub fn run() -> io::Result<()> {
             gdb,
         }) => {
             run_debug(
-                state,
                 elf,
                 target,
                 backend,
@@ -130,6 +126,7 @@ fn run_tui_loop(
             current_timeout,
             saved_app.take(),
             state.clone(),
+            None,
         )?;
 
         match exit {
@@ -164,7 +161,46 @@ fn run_tui_default(state: Arc<AppState>) -> io::Result<()> {
             eprintln!("  - {} (芯片: {})", d.probe_name, d.chip_name);
         }
     }
-    run_tui_loop("3333".to_string(), String::new(), 60, state)
+
+    // Pass detected chips into first TUI launch for auto-fill
+    let gdb_port = "3333".to_string();
+    let pyocd_path = String::new();
+    let timeout = 60u64;
+    let mut saved_app: Option<tui::app::App> = None;
+
+    loop {
+        let initial_detected = if saved_app.is_none() { Some(detected.clone()) } else { None };
+        let (exit, new_app) = tui::run_with_resume(
+            gdb_port.clone(),
+            pyocd_path.clone(),
+            timeout,
+            saved_app.take(),
+            state.clone(),
+            initial_detected,
+        )?;
+
+        match exit {
+            tui::TuiExit::Quit => break,
+            tui::TuiExit::Flashed => {
+                saved_app = new_app;
+            }
+            tui::TuiExit::DebugRequested {
+                elf,
+                target,
+                backend,
+                interface,
+                port,
+                gdb,
+            } => {
+                saved_app = new_app;
+                match tui::run_debug(elf, target, backend, interface, port, gdb)? {
+                    tui::TuiExit::Quit => break,
+                    tui::TuiExit::Flashed | tui::TuiExit::DebugRequested { .. } => {}
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -212,7 +248,7 @@ fn run_headless(
         _ => {
             println!(
                 "{}",
-                serde_json::to_string_pretty(&flash::FlashResult {
+                serde_json::to_string_pretty(&FlashResult {
                     success: false,
                     message: "无头模式需要提供 -i, -t, -e 全部参数".to_string(),
                     command: String::new(),
@@ -225,11 +261,7 @@ fn run_headless(
         }
     };
 
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .map_err(io::Error::other)?;
-    let result = rt.block_on(state.flash(&backend, &t, &i, &e, &gdb_port, &pyocd_path, timeout));
+    let result = state.flash(&backend, &t, &i, &e, &gdb_port, &pyocd_path, timeout);
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
     Ok(if result.success { 0 } else { 1 })
 }
@@ -245,11 +277,7 @@ fn run_cli_mode(
     pyocd_path: String,
     timeout: u64,
 ) -> io::Result<i32> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .map_err(io::Error::other)?;
-    let result = rt.block_on(state.flash(&backend, target, interface, elf, &gdb_port, &pyocd_path, timeout));
+    let result = state.flash(&backend, target, interface, elf, &gdb_port, &pyocd_path, timeout);
 
     println!("{}", result.message);
     if let Some(ref stdout) = result.stdout
@@ -270,7 +298,6 @@ fn run_cli_mode(
 // ============================================================================
 
 fn run_debug(
-    _state: Arc<AppState>,
     elf: String,
     target: String,
     backend: String,

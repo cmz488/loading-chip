@@ -5,7 +5,7 @@
 
 use crate::backend::mappings;
 use crate::backend::Backend;
-use crate::FlashConfig;
+use crate::backend::FlashConfig;
 
 /// probe-rs 后端
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,7 +40,7 @@ mod tests {
 
     fn cfg() -> FlashConfig {
         FlashConfig {
-            backend: crate::FlashBackend::ProbeRs,
+            backend: crate::backend::FlashBackend::ProbeRs,
             interface: String::new(),
             target: "stm32f4".into(),
             elf_path: "a.elf".into(),

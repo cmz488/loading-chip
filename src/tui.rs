@@ -19,6 +19,7 @@ use crossterm::{
 };
 
 use crate::app::state::AppState;
+use crate::chip_detect::DetectedChip;
 use self::app::App;
 use self::events::handle_key;
 use self::ui::ui;
@@ -51,6 +52,7 @@ pub fn run_with_resume(
     timeout_secs: u64,
     resume_app: Option<App>,
     state: Arc<AppState>,
+    initial_detected: Option<Vec<DetectedChip>>,
 ) -> io::Result<(TuiExit, Option<App>)> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -59,8 +61,9 @@ pub fn run_with_resume(
     let backend_t = ratatui::backend::CrosstermBackend::new(stdout);
     let mut terminal = ratatui::Terminal::new(backend_t)?;
 
+    let detected = initial_detected.unwrap_or_default();
     let mut app = resume_app.unwrap_or_else(move || {
-        let mut app = App::new(gdb_port, pyocd_path, timeout_secs, state);
+        let mut app = App::new(gdb_port, pyocd_path, timeout_secs, state, detected);
         // Auto-fill from detection
         if let Some(detected) = app.detected_chips.first() {
             let board_id = detected

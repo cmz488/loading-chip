@@ -72,7 +72,7 @@ impl ProbeRsRtt {
         #[cfg(not(feature = "debug"))]
         {
             let _ = sender.send(RttOutput { channel: 1, text: "RTT 需要 debug feature".into() });
-            return Ok(Self { thread: None, running: Arc::new(AtomicBool::new(false)) });
+            return Err(std::io::Error::other("RTT 功能需要启用 debug feature（默认已启用）"));
         }
 
         #[cfg(feature = "debug")]
@@ -445,7 +445,7 @@ pub fn spawn_pyocd_rtt(telnet_port: u16, sender: Sender<RttOutput>) -> std::io::
 }
 
 // ============================================================================
-// 统一 RTT 客户端工厂（TUI 和 API 共用）
+// RTT 客户端工厂
 // ============================================================================
 
 /// 根据后端类型创建 RTT 客户端和可选的子进程句柄
