@@ -1,6 +1,6 @@
 # loading-chip 🔥
 
-嵌入式芯片烧录/调试 TUI 工具 — 支持 probe-rs / OpenOCD / pyOCD / GDB 四种后端，提供终端交互界面、命令行无头模式、和 REST API + WebSocket 服务。
+嵌入式芯片烧录/调试 TUI 工具 — 支持 probe-rs / OpenOCD / pyOCD / GDB 四种后端，提供终端交互界面和命令行无头模式。
 
 ## 系统依赖
 
@@ -58,7 +58,7 @@ loading-chip init
 
 ```
 src/
-├── lib.rs              # 入口：解析 CLI → 分发到 TUI/Headless/API/Debug/Init
+├── lib.rs              # 入口：解析 CLI → 分发到 TUI/Headless/CLI/Debug/Init/Detect
 ├── cli.rs              # clap 命令行参数定义
 ├── main.rs             # fn main() → loading_chip::run()
 │
@@ -86,24 +86,12 @@ src/
 │   ├── rtt.rs          # RTT 客户端（probe-rs 库 API / OpenOCD telnet / pyOCD telnet）
 │   └── session.rs      # DebugSession 状态管理
 │
-├── api/
-│   ├── mod.rs          # API 模块入口 + 端点文档
-│   ├── server.rs       # Axum HTTP 服务器（TCP / graceful shutdown）
-│   └── routes/
-│       ├── status.rs   # GET  /api/status
-│       ├── board.rs    # GET  /api/boards, /api/boards/{id}
-│       ├── flash.rs    # POST /api/flash
-│       ├── detect.rs   # GET  /api/detect
-│       ├── debug.rs    # POST /api/debug/start, /api/debug/stop
-│       └── rtt.rs      # WebSocket /api/rtt
-│
 ├── app/
-│   └── state.rs        # AppState — TUI/API/Headless 共享状态（Arc 包裹）
-│
+│   └── state.rs        # AppState — TUI/CLI/Headless 共享状态
+
 ├── chip_detect.rs      # probe-rs 芯片自动检测
 ├── config.rs           # 用户配置文件读写（~/.config/loading-chip/config.yaml）
 ├── setup.rs            # loading-chip init 环境检测
-└── flash.rs            # 烧录模块 re-export
 ```
 
 ## 数据流
@@ -111,8 +99,9 @@ src/
 ```
 CLI 参数
   ├── 无参数          → TUI 交互模式
-  ├── run              → TUI / --headless JSON / --api HTTP / 全参数 CLI
+  ├── run              → TUI / --headless JSON / 全参数 CLI
   ├── debug -e <ELF>   → RTT 实时监视器（TUI）
+  ├── detect           → probe-rs 芯片检测
   └── init             → 环境检测 → 生成配置文件
 
 TUI 模式:
@@ -120,13 +109,11 @@ TUI 模式:
     ↕ F5 切换
   RTT 监视器 → ProbeRsRtt (probe-rs 库 API) → 实时读取芯片 RAM 中的 RTT 缓冲区
 
-API 模式:
-  POST /api/flash → state.flash() → do_flash()
-  POST /api/debug/start → spawn ProbeRsRtt (broadcast → rtt_tx)
-  WebSocket /api/rtt → subscribe rtt_tx → 实时 RTT 数据流
-
 Headless 模式:
-  全参数 CLI → FlashConfig::from_registry() → do_flash() → JSON stdout
+  全参数 CLI → state.flash() → do_flash() → JSON stdout
+
+CLI 模式:
+  全参数 CLI → state.flash() → do_flash() → 文本输出
 ```
 
 ## 用户接口
@@ -140,9 +127,6 @@ loading-chip detect
 ```bash
 # 启动 TUI
 loading-chip run
-
-# 启动 TUI + API 服务（另一个终端可查看 RTT）
-loading-chip run --api
 ```
 
 **快捷键:**
@@ -176,59 +160,6 @@ loading-chip debug -e ./firmware.elf -t mspm0g3507 -b probe-rs -i jlink
 # JSON 输出，供 IDE / CI 解析
 loading-chip run --headless -b probe-rs -i jlink -t stm32f4 -e ./firmware.elf
 # → {"success":true,"message":"✅ 烧录成功！...","command":"...","stdout":null,"stderr":null}
-```
-
-## API 接口
-
-启动 API 服务：
-
-```bash
-loading-chip run --api --headless    # 纯 API 模式
-loading-chip run --api               # TUI + API 并行
-```
-
-默认监听 `127.0.0.1:9876`，可通过 `--api-addr` 指定。
-
-### 端点
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/api/status` | 烧录状态、当前板子、后端、最后一次结果 |
-| `GET` | `/api/boards` | 所有板子列表 |
-| `GET` | `/api/boards/{id}` | 板子详情（含各后端目标参数） |
-| `GET` | `/api/detect` | 芯片自动检测结果 |
-| `POST` | `/api/flash` | 触发烧录 `{"backend":"probe-rs","board":"stm32f4","elf":"/path/to/fw.elf"}` |
-| `POST` | `/api/debug/start` | 启动 RTT 会话 `{"elf":"/path/to/fw.elf","target":"mspm0g3507"}` |
-| `POST` | `/api/debug/stop` | 停止 RTT 会话 |
-| `GET` | `/api/rtt` | WebSocket RTT 实时数据流 |
-
-### 使用示例
-
-```bash
-# 烧录
-curl -X POST http://127.0.0.1:9876/api/flash \
-  -H 'Content-Type: application/json' \
-  -d '{"backend":"probe-rs","board":"stm32f4","elf":"/tmp/fw.elf"}'
-
-# 芯片检测
-curl http://127.0.0.1:9876/api/detect
-
-# RTT 实时流
-curl -X POST http://127.0.0.1:9876/api/debug/start \
-  -H 'Content-Type: application/json' \
-  -d '{"elf":"/tmp/fw.elf","target":"mspm0g3507"}'
-websocat ws://127.0.0.1:9876/api/rtt
-
-# 停止 RTT
-curl -X POST http://127.0.0.1:9876/api/debug/stop
-```
-
-**WebSocket RTT 消息格式:**
-
-```json
-{"type":"connected","message":"RTT 数据流已连接"}
-{"type":"rtt","channel":0,"data":"tick=42 hello from MSPM0G3507 RTT!"}
-{"type":"warning","message":"丢弃了 5 条 RTT 消息"}
 ```
 
 ## 支持的硬件
@@ -298,7 +229,7 @@ boards:
 - **RTT 实时监视** — 直接读取芯片 RAM 中的 RTT 缓冲区（probe-rs 库 API），ELf 符号定位，行缓冲按行输出
 - **多后端 RTT** — probe-rs（库 API）/ OpenOCD（telnet）/ pyOCD（telnet）
 - **芯片自适应** — 选择芯片后自动匹配推荐接口类型
-- **TUI ↔ API 共享** — 全局 broadcast 通道，TUI 的 RTT 数据同步推送至 API WebSocket
+- **统一烧录接口** — `AppState::flash()` 为 CLI/Headless 模式提供统一烧录入口
 - **烧录动画** — 跳动 + 旋转进度指示
 - **暗色主题** — 统一 11 色调色板 + 圆角边框
 
