@@ -53,14 +53,6 @@ pub enum Commands {
         /// 超时时间（秒），默认 60。0 表示无超时
         #[arg(long, default_value = "60", value_name = "秒")]
         timeout: u64,
-
-        /// 启动 REST API + WebSocket 服务（可与 TUI 同时使用）
-        #[arg(long)]
-        api: bool,
-
-        /// API 监听地址（host:port 或 Unix socket 路径）
-        #[arg(long, default_value = "127.0.0.1:9876")]
-        api_addr: String,
     },
 
     /// 初始化环境：检测本地可用的后端工具并生成用户配置文件
