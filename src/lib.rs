@@ -1,13 +1,12 @@
 //! loading-chip 🔥 — 嵌入式芯片烧录/调试 TUI 工具
 //!
 //! 通过 TUI 界面收集烧录参数，自动调用 arm-none-eabi-gdb / OpenOCD / probe-rs 完成固件烧录。
-//! 同时提供命令行模式、REST API 和 RTT 实时监视。
+//! 同时提供命令行模式、无头模式和 RTT 实时监视。
 //!
 //! ## 用法
 //! ```text
 //! loading-chip run              → TUI 交互模式（烧录 + RTT 监视）
 //! loading-chip run --headless   → 无头模式，JSON 输出（供 IDE 调用）
-//! loading-chip run --api        → 启动 REST API 服务
 //! loading-chip debug -e <ELF>   → RTT 实时监视模式
 //! loading-chip init             → 检测本地工具链并生成配置
 //! loading-chip --help           → 查看帮助
