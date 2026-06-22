@@ -9,20 +9,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crossbeam_channel::Sender;
-
-/// 全局 RTT broadcast — TUI 和 API 共享
-/// API 服务启动时设置，TUI RTT 循环自动向此通道发布数据
-static GLOBAL_BROADCAST: OnceLock<tokio::sync::broadcast::Sender<RttOutput>> = OnceLock::new();
-
-/// 设置全局 RTT broadcast 发送端（由 API server 调用）
-pub fn set_global_broadcast(tx: tokio::sync::broadcast::Sender<RttOutput>) {
-    let _ = GLOBAL_BROADCAST.set(tx);
-}
 
 /// RTT 输出记录
 #[derive(Debug, Clone)]
@@ -48,8 +39,6 @@ pub struct RttConfig {
     pub probe: String,
     pub telnet_port: u16,
     pub elf_path: Option<String>,
-    /// 可选的 broadcast sender — RTT 数据同时发布到此通道（供 API WebSocket 订阅）
-    pub broadcast: Option<tokio::sync::broadcast::Sender<RttOutput>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,12 +82,11 @@ impl ProbeRsRtt {
             let chip = config.chip.clone();
             let probe_desc = config.probe.clone();
             let elf_path = config.elf_path.clone();
-            let broadcast = config.broadcast.clone();
 
             let handle = thread::Builder::new()
                 .name("probe-rs-rtt".into())
                 .spawn(move || {
-                    if let Err(e) = probe_rs_rtt_loop(&chip, &probe_desc, &running_clone, &sender, elf_path.as_deref(), broadcast) {
+                    if let Err(e) = probe_rs_rtt_loop(&chip, &probe_desc, &running_clone, &sender, elf_path.as_deref()) {
                         let _ = sender.send(RttOutput { channel: 1, text: format!("RTT 错误: {}", e) });
                     }
                 })
@@ -139,7 +127,6 @@ fn probe_rs_rtt_loop(
     running: &AtomicBool,
     sender: &Sender<RttOutput>,
     elf_path: Option<&str>,
-    broadcast_tx: Option<tokio::sync::broadcast::Sender<RttOutput>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use probe_rs::probe::list::Lister;
     use probe_rs::rtt::{Rtt, ScanRegion};
@@ -253,7 +240,6 @@ fn probe_rs_rtt_loop(
     let num_channels = rtt.up_channels().len();
     let mut line_bufs: Vec<String> = vec![String::new(); num_channels];
     let mut buf = vec![0u8; 4096];
-    let broadcast = broadcast_tx.clone();
 
     while running.load(Ordering::SeqCst) {
         for i in 0..num_channels {
@@ -266,14 +252,7 @@ fn probe_rs_rtt_loop(
                             line_bufs[i].drain(..=nl);
                             if !line.is_empty() {
                                 let out = RttOutput { channel: i as u8, text: line };
-                                // 发送到 TUI（crossbeam channel）
-                                if sender.send(out.clone()).is_err() { return Ok(()); }
-                                // 发布到 API broadcast（优先 config 传入，回退到全局）
-                                if let Some(ref tx) = broadcast {
-                                    let _ = tx.send(out.clone());
-                                } else if let Some(tx) = GLOBAL_BROADCAST.get() {
-                                    let _ = tx.send(out);
-                                }
+                                if sender.send(out).is_err() { return Ok(()); }
                             }
                         }
                     }
@@ -471,7 +450,7 @@ pub fn spawn_pyocd_rtt(telnet_port: u16, sender: Sender<RttOutput>) -> std::io::
 
 /// 根据后端类型创建 RTT 客户端和可选的子进程句柄
 ///
-/// TUI 和 API 模式共享此工厂函数，避免后端 spawn 逻辑重复。
+/// TUI 模式的 RTT 客户端工厂函数。
 ///
 /// # Returns
 /// - `Ok((client, child))` — RTT 客户端 + OpenOCD/pyOCD 子进程（probe-rs 时为 None）
@@ -532,7 +511,6 @@ pub fn create_rtt_client(
                 probe: String::new(),
                 telnet_port: gdb_port,
                 elf_path: if elf_path.is_empty() { None } else { Some(elf_path.to_string()) },
-                broadcast: None,
             };
             let client = ProbeRsRtt::spawn(&cfg, tx)
                 .map_err(|e| format!("probe-rs RTT 启动失败: {}", e))?;
