@@ -26,7 +26,6 @@
 //! stm32f1, stm32f4, stm32h7, stm32g0, esp32, esp32s3, esp32c3,
 //! rp2040, nrf52, gd32, at32, mspm0g3507
 
-mod api;
 mod app;
 mod backend;
 mod board;
@@ -71,11 +70,8 @@ pub fn run() -> io::Result<()> {
             pyocd_path,
             headless,
             timeout,
-            api,
-            api_addr,
         }) => run_flash(
-            state, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout, api,
-            api_addr,
+            state, backend, interface, target, elf, gdb_port, pyocd_path, headless, timeout,
         )?,
         Some(cli::Commands::Debug {
             elf,
@@ -183,39 +179,12 @@ fn run_flash(
     pyocd_path: String,
     headless: bool,
     timeout: u64,
-    api: bool,
-    api_addr: String,
 ) -> io::Result<i32> {
-    // 启动 API 服务（与 TUI/Headless 共享同一个 AppState）
-    let _api_shutdown = if api {
-        match api::spawn_server((*state).clone(), api_addr.clone()) {
-            Ok(shutdown) => Some(shutdown),
-            Err(e) => {
-                eprintln!("❌ API 启动失败: {}", e);
-                return Ok(1);
-            }
-        }
-    } else {
-        None
-    };
 
     if headless {
-        if let Some(_shutdown) = _api_shutdown {
-            eprintln!("🟢 API 运行中（按 Ctrl+C 退出）...");
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_time()
-                .build()
-                .map_err(io::Error::other)?;
-            rt.block_on(async {
-                tokio::signal::ctrl_c().await.ok();
-                eprintln!("\n正在关闭...");
-            });
-            return Ok(0);
-        } else {
-            return run_headless(
-                &state, backend, interface, target, elf, gdb_port, pyocd_path, timeout,
-            );
-        }
+        return run_headless(
+            &state, backend, interface, target, elf, gdb_port, pyocd_path, timeout,
+        );
     }
 
     // 命令行模式：全参数 → 跳过 TUI
